@@ -1,0 +1,21 @@
+[node]
+; port this process listens on
+moses_slave_port: 8000
+; directory containing OpenSim.exe
+opensim_template: /opt/opensim-0.7.6/bin
+; directory where we can create instances
+region_dir: /home/mheilman/dev/moses/regions
+; mgm connectable address
+mgm_address: xxx.xxx.xxx.xxx
+
+; range of ports for region tcp/udp
+region_port_range: 9000-9029
+; range of ports available for tcp console (local only, but collisions are bad)
+console_port_range: 10000-10029
+; client connectable address for hosted regions
+region_external_address: yyy.yyy.yyy.yyy
+
+[ssl]
+; locations for ssl certificates.  Self-signed generated if missing.
+cert: 'my_cert.crt'
+key: 'my_cert.key'

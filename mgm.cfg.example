@@ -17,5 +17,5 @@ region_external_address: yyy.yyy.yyy.yyy
 
 [ssl]
 ; locations for ssl certificates.  Self-signed generated if missing.
-cert: 'my_cert.crt'
-key: 'my_cert.key'
+cert: my_cert.crt
+key: my_cert.key

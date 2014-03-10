@@ -5,6 +5,8 @@ Command and Control script used to allow mgm to start and stop processes on a se
 ## Ubuntu / Centos 6
 Note that the version of python-requests on Ubuntu is outdated on Ubuntu 12.04, so you must either acquire the required package, or run on a newer version of Ubuntu.
 
+On centos, all requisite packages at appropriate versions are present in EPEL
+
 ### Required Packages
 
 python-cherrypy python-psutil python-requests

@@ -24,7 +24,7 @@ MgmNode is currently tested on python 2.7, and will run wherever that, and its r
 1. Run `python mgmNode/node.py` to confirm all apackages present and test isntallation.  If you have many ports configured this may take a few minutes before it prints to the console, as it is performing a file copy from opensim into regions
 1. Add the ip address of your mgmNode host to MGM.  If they are on the same host, use external ip addresses instead of 127.0.0.1
 1. Reference the mgmNode/upstart script for running mgmNode as a service
-1.  Allow ports 8080 and your conmfigured ports through iptables if necessary
+1.  Allow ports 8080 and your configured ports through iptables if necessary
 
 ## Windows
 mgmNode has been installed an ran on a Windows server, but Windows specific directions are not included here

@@ -5,6 +5,7 @@ Created on Feb 1, 2013
 '''
 import os, psutil, json, time, requests, threading, Queue as QX, re, shutil
 from multiprocessing import Process, Queue
+from threading import Thread
 from subprocess import PIPE
 
 
@@ -12,7 +13,7 @@ from psutil import Popen
 
 from RestConsole import RestConsole
 
-class RegionLogger( Process ):
+class RegionLogger( Thread ):
 
     def __init__(self, url, region, stderr, stdout, queue):
         super(RegionLogger, self).__init__()
@@ -22,6 +23,7 @@ class RegionLogger( Process ):
         self.region = region
         self.stderr = stderr
         self.stdout = stdout
+        self.shutdown = False
         
     def run(self):
         self.stdin = threading.Thread(target=self.logToOut, args=(self.stdout,))
@@ -32,7 +34,8 @@ class RegionLogger( Process ):
         self.stdout.start()
         
         try:
-            while True:
+            while not self.shutdown:
+                time.sleep(10)
                 if not self.queue.empty():
                     messages = []
                     try:
@@ -56,7 +59,6 @@ class RegionLogger( Process ):
                         req = requests.post(self.url,data={'log':json.dumps(messages)}, verify=False)
                         if not req.status_code == requests.codes.ok:
                             print "Error sending %s: %s" % (self.region, req.content)
-                time.sleep(10)
         except:
             #we receive sigint and sigterm during normal operation, exit
             pass
@@ -66,20 +68,25 @@ class RegionLogger( Process ):
             line = pipe.readline()
             if line.strip() != "":
                 self.queue.put(line.strip())
-            #time.sleep(.05)
+            time.sleep(.25)
 
-class RegionWorker( Process ):
+class RegionWorker( Thread ):
     def __init__(self, jobQueue, logQueue):
         super(RegionWorker, self).__init__()
         self.queue = jobQueue
         self.log = logQueue
+        self.shutdown = False
     
     def run(self):
         self.log.put("[MGM] region worker process started")
         try:
-            while True:
+            while not self.shutdown:
+                time.sleep(5)
                 #block and wait for a new job
-                job = self.queue.get()
+                try:
+                    job = self.queue.get(False)
+                except QX.Empty:
+                    continue
                 
                 #operate
                 if job['name'] == "save_oar":
@@ -106,6 +113,7 @@ class RegionWorker( Process ):
         done = False
         abort = False
         while not done and not abort:
+            time.sleep(5)
             for line in console.readLine():
                 #timeout this function after an hour
                 if (time.time() - start) > 60*60:
@@ -141,6 +149,7 @@ class RegionWorker( Process ):
         done = False
         abort = False
         while not done and not abort:
+            time.sleep(5)
             for line in console.readLine():
                 #timeout this function after an hour
                 if (time.time() - start) > 60*60:
@@ -178,6 +187,7 @@ class RegionWorker( Process ):
         done = False
         abort = False
         while not done and not abort:
+            time.sleep(5)
             for line in console.readLine():
                 #timeout this function after an hour
                 if (time.time() - start) > 60*60:
@@ -214,6 +224,7 @@ class RegionWorker( Process ):
         done = False
         abort = False
         while not done and not abort:
+            time.sleep(5)
             for line in console.readLine():
                 #timeout this function after an hour
                 if (time.time() - start) > 60*60:
@@ -290,9 +301,9 @@ class Region:
             except:
                 pass
         if self.workerProcess:
-            self.workerProcess.terminate()
+            self.workerProcess.shutdown = True
         if self.loggerProcess:
-            self.loggerProcess.terminate()
+            self.loggerProcess.shutdown = True
             
     def isRunning(self):
         if not self.proc:
@@ -421,9 +432,9 @@ class Region:
             return
         
         if self.workerProcess:
-            self.workerProcess.terminate()
+            self.workerProcess.shutdown = True
         if self.loggerProcess:
-			self.loggerProcess.terminate()
+			self.loggerProcess.shutdown = True
         
         self.writeConfig()
         
@@ -451,15 +462,12 @@ class Region:
     def stopProcess(self):
         if self.isRunning():
             self.logQueue.put("[MGM] %s Terminating" % self.name)
-            self.workerProcess.terminate()
-            self.workerProcess = None
+            self.jobQueue.shutdown = True
             try:
                 self.proc.kill()
-                #self.proc.communicate()
             except psutil.NoSuchProcess:
                 pass
-            self.loggerProcess.terminate()
-            self.loggerProcess = None
+            self.logQueue.shutdown = True
 
     def saveOar(self, uname, password, reportUrl, uploadUrl):
         try:

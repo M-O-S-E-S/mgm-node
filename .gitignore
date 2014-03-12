@@ -38,3 +38,5 @@ nosetests.xml
 # ssl certificates
 *.key
 *.crt
+
+mgm.cfg

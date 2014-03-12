@@ -288,8 +288,6 @@ class Region:
         if self.proc:
             try:
                 self.proc.kill()
-                #self.proc.communicate()
-                #delf.proc = None
             except:
                 pass
         if self.workerProcess:
@@ -320,64 +318,35 @@ class Region:
         stats = {}
         stats["stage"] = self.trackStage	
         if self.isRunning():
-			try:
-				stats["uptime"] = time.time() - self.proc.create_time
-				stats["memPercent"] = self.proc.get_memory_percent()
-				stats["memKB"] = self.proc.get_memory_info().rss / 1024
-				stats["cpuPercent"] = self.proc.get_cpu_percent(0.1)
-				r = requests.get("http://127.0.0.1:%d/jsonSimStats" % self.port, timeout=0.25)
-				if r.status_code == requests.codes.ok:
-					stats["simStats"] = json.loads(r.content)
-					if float(self.stats["simStats"]["SimFPS"]) == 0.0:
-						#error condition
-						self.simPhysicsCounter+= 1
-						print "process %s reported 0 physics fps" % self.name
-					else:
-						self.simPhysicsCounter = 0
-				else:
-					self.simStatsCounter+=1
-					print "process %s did not report simstats" % self.name
-			except:
-				# ignore and track.  we get nosuchprocess regularly here when first starting a region
-				self.simStatsCounter+= 1
+			#try:
+            stats["uptime"] = time.time() - self.proc.create_time
+            stats["memPercent"] = self.proc.get_memory_percent()
+            stats["memKB"] = self.proc.get_memory_info().rss / 1024
+            stats["cpuPercent"] = self.proc.get_cpu_percent(0.1)
+            r = requests.get("http://127.0.0.1:%d/jsonSimStats" % self.port, timeout=1.0)
+            if r.status_code == requests.codes.ok:
+                stats["simStats"] = json.loads(r.content)
         self.stats =  stats
-        
-        if not self.isRunning() and self.trackStage == "running":
-            self.startFailCounter += 1
-            #self.startProcess()
-            print "process %s is not running" % self.name
-        if self.isRunning() and self.trackStage == "stopped":
-            self.stopFailCounter += 1
-            #self.stopProcess()
-            print "process %s is not stopped" % self.name
-            
-        if self.startFailCounter > 5 and not self.trackStage == "Failed to Start":
-            self.trackStage = "Failed to Start"
-            self.logQueue.put("[MGM] %s failed to start 5 times, autostart halted" % self.name)
-            print "process %s autostart halted" % self.name
-        
-        if self.stopFailCounter > 5 and not self.trackStage == "Failed to Stop":
-            self.trackStage = "killed"
-            self.stopFailCounter = 0
-            self.stopProcess()
-            self.logQueue.put("[MGM] %s failed to stop within 5 cycles, it has been terminated" % self.name)
-            print "process %s autostop halted" % self.name
-        
-        if self.simStatsCounter > 5 and not self.trackStage == "Killed":
-            self.stopProcess()
-            self.trackStage = "Killed"
-            self.simStatsCounter = 0
-            self.logQueue.put("[MGM] %s failed to report simstats for 5 cycles, it has been terminated" % self.name)
-            print "process %s killed for not reporting simstats" % self.name
-          
-        if self.simPhysicsCounter > 5 and not self.trackstage == "Killed":
-            self.stopProcess()
-            self.trackStage = "Killed"
-            self.simPhysicsCounter = 0
-            self.logQueue.put("[MGM]%s had 0 FPS physics for 5 cycles, it has been terminated" % self.name)
-            print "process %s killed for poor performance" % self.name
            
     def writeConfig(self, name):
+        # regions file
+        r = requests.get("http://%s/dispatch/region/%s" % (self.dispatchUrl, self.name))
+        if r.status_code == requests.codes.ok:
+            content = json.loads(r.content)
+            region = content["Region"]
+            f = open(os.path.join(self.startDir, 'Regions', 'Regions.ini'), 'w')
+            f.write("[%s]\n" % self.name)
+            f.write('RegionUUID = "%s"\n' % region["uuid"])
+            f.write('Location = "%s,%s"\n' % (region["locX"], region["locY"]))
+            f.write('InternalAddress = "0.0.0.0"\n')
+            f.write('InternalPort = %s\n' % region["httpPort"])
+            f.write('AllowAlternatePorts = False\n')
+            f.write('ExternalHostName = "%s"\n' % region["externalAddress"])
+            f.close()
+
+        # opensim.ini file
+        
+        # logging config file
         cfgFile = open(self.configFile, "w")
         cfgFile.write( """<?xml version="1.0" encoding="utf-8" ?>
 <configuration>

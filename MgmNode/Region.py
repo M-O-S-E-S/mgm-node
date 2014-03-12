@@ -253,8 +253,7 @@ class Region:
         self.name = procName
         self.externalAddress = externalAddress
         self.dispatchUrl = dispatchUrl
-        dispatcher = "http://%s/dispatch/process/%%s?httpPort=%%s&consolePort=%%s&externalAddress=%%s" % dispatchUrl
-        self.startString = "OpenSim.exe -console rest -inifile %s -logconfig %s.cfg" % (dispatcher, procName)
+        self.startString = "OpenSim.exe -console rest -logconfig %s.cfg" % procName
 
         self.trackStage = "stopped"
         self.startFailCounter = 0
@@ -323,12 +322,27 @@ class Region:
             stats["memPercent"] = self.proc.get_memory_percent()
             stats["memKB"] = self.proc.get_memory_info().rss / 1024
             stats["cpuPercent"] = self.proc.get_cpu_percent(0.1)
-            r = requests.get("http://127.0.0.1:%d/jsonSimStats" % self.port, timeout=1.0)
-            if r.status_code == requests.codes.ok:
-                stats["simStats"] = json.loads(r.content)
+            try:
+                r = requests.get("http://127.0.0.1:%d/jsonSimStats" % self.port, timeout=0.5)
+                if r.status_code == requests.codes.ok:
+                    stats["simStats"] = json.loads(r.content)
+            except:
+                pass
         self.stats =  stats
            
-    def writeConfig(self, name):
+    def writeConfig(self):
+        # opensim.ini file
+        r = requests.get("http://%s/dispatch/process/%s?httpPort=%s&consolePort=%s&externalAddress=%s" % (self.dispatchUrl, self.name, self.port, self.console, self.externalAddress))
+        if r.status_code == requests.codes.ok:
+            content = json.loads(r.content)
+            region = content["Region"]
+            f = open(os.path.join(self.startDir, 'OpenSim.ini'), 'w')
+            for section in region:
+                f.write('[%s]\n' % section)
+                for item in region[section]:
+                    f.write('\t%s = "%s"\n' %(item, region[section][item]))
+            f.close()
+        
         # regions file
         r = requests.get("http://%s/dispatch/region/%s" % (self.dispatchUrl, self.name))
         if r.status_code == requests.codes.ok:
@@ -343,8 +357,6 @@ class Region:
             f.write('AllowAlternatePorts = False\n')
             f.write('ExternalHostName = "%s"\n' % region["externalAddress"])
             f.close()
-
-        # opensim.ini file
         
         # logging config file
         cfgFile = open(self.configFile, "w")
@@ -413,15 +425,14 @@ class Region:
         if self.loggerProcess:
 			self.loggerProcess.terminate()
         
-        self.writeConfig(self.name)
+        self.writeConfig()
         
         self.logQueue.put("[MGM] %s starting" % self.name)
         
         print "Region %s Started" % self.name
-        namedString = self.startString % (self.name, self.port, self.console, self.externalAddress)
         mono_env = os.environ.copy()
         mono_env["MONO_THREADS_PER_CPU"] = "2000"
-        self.proc = Popen(namedString.split(" "), cwd=self.startDir, stdout=PIPE, stderr=PIPE, env=mono_env)
+        self.proc = Popen(self.startString.split(" "), cwd=self.startDir, stdout=PIPE, stderr=PIPE, env=mono_env)
         self.workerProcess = RegionWorker(self.jobQueue, self.logQueue)
         self.workerProcess.daemon = True
         self.workerProcess.start()

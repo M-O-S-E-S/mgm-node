@@ -264,7 +264,7 @@ class Region:
         self.name = procName
         self.externalAddress = externalAddress
         self.dispatchUrl = dispatchUrl
-        self.startString = "OpenSim.exe -console rest -logconfig %s.cfg" % procName
+        self.startString = "OpenSim.exe -console rest -name %%s -logconfig %s.cfg" % procName
 
         self.trackStage = "stopped"
         self.startFailCounter = 0
@@ -443,7 +443,8 @@ class Region:
         print "Region %s Started" % self.name
         mono_env = os.environ.copy()
         mono_env["MONO_THREADS_PER_CPU"] = "2000"
-        self.proc = Popen(self.startString.split(" "), cwd=self.startDir, stdout=PIPE, stderr=PIPE, env=mono_env)
+        namedString = self.startString % self.name
+        self.proc = Popen(namedString.split(" "), cwd=self.startDir, stdout=PIPE, stderr=PIPE, env=mono_env)
         self.workerProcess = RegionWorker(self.jobQueue, self.logQueue)
         self.workerProcess.daemon = True
         self.workerProcess.start()

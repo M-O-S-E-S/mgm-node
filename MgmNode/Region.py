@@ -19,7 +19,7 @@ class RegionLogger( Thread ):
         super(RegionLogger, self).__init__()
         self.queue = queue
         self.regexp = re.compile(r'^{[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}}.*')
-        self.url = "http://%s/dispatch/logs/%s" % (url,region)
+        self.url = "http://%s/server/dispatch/logs/%s" % (url,region)
         self.region = region
         self.stderr = stderr
         self.stdout = stdout
@@ -343,7 +343,7 @@ class Region:
            
     def writeConfig(self):
         # opensim.ini file
-        r = requests.get("http://%s/dispatch/process/%s?httpPort=%s&consolePort=%s&externalAddress=%s" % (self.dispatchUrl, self.name, self.port, self.console, self.externalAddress))
+        r = requests.get("http://%s/server/dispatch/process/%s?httpPort=%s&consolePort=%s&externalAddress=%s" % (self.dispatchUrl, self.name, self.port, self.console, self.externalAddress))
         if r.status_code == requests.codes.ok:
             content = json.loads(r.content)
             region = content["Region"]
@@ -355,7 +355,7 @@ class Region:
             f.close()
         
         # regions file
-        r = requests.get("http://%s/dispatch/region/%s" % (self.dispatchUrl, self.name))
+        r = requests.get("http://%s/server/dispatch/region/%s" % (self.dispatchUrl, self.name))
         if r.status_code == requests.codes.ok:
             content = json.loads(r.content)
             region = content["Region"]

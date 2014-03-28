@@ -68,7 +68,7 @@ class Slave:
     
     def loadRemoteConfig(self):
         #load additional config from master service
-        url = "http://%s/dispatch/node" % (self.frontendAddress)
+        url = "http://%s/server/dispatch/node" % (self.frontendAddress)
         r = requests.post(url, data={'host':self.host, 'port':self.port, 'key':self.key, 'slots': len(self.procs)}, verify=False)
         if not r.status_code == requests.codes.ok:
             raise Exception("Error contacting MGM at %s" % url)
@@ -106,7 +106,7 @@ class Slave:
                 p['stats'] = self.procs[proc].stats
                 stats['processes'].append(p)
         
-        url = "http://%s/dispatch/stats/%s" % (self.frontendAddress, self.host)
+        url = "http://%s/server/dispatch/stats/%s" % (self.frontendAddress, self.host)
         r = requests.post(url, data={"json": json.dumps(stats)}, verify=False)
         if not r.status_code == requests.codes.ok:
             print "error uploading stats to master"
@@ -178,9 +178,9 @@ class Slave:
                     if self.procs[proc].name == name:
                         if not self.procs[proc].isRunning:
                             return json.dumps({ "Success": False, "Message": "Region must be running to manage iars"})
-                        ready = "http://%s/task/ready/%s" % (self.frontendAddress, job)
-                        report = "http://%s/task/report/%s" % (self.frontendAddress, job)
-                        upload = "http://%s/task/upload/%s" % (self.frontendAddress, job)
+                        ready = "http://%s/server/task/ready/%s" % (self.frontendAddress, job)
+                        report = "http://%s/server/task/report/%s" % (self.frontendAddress, job)
+                        upload = "http://%s/server/task/upload/%s" % (self.frontendAddress, job)
                         if action == "save":
                             if self.procs[proc].saveIar(uname, password, report, upload, inventoryPath, avatarName, avatarPassword):
                                 return json.dumps({ "Success": True})
@@ -204,9 +204,9 @@ class Slave:
                     if self.procs[proc].name == name:
                         if not self.procs[proc].isRunning:
                             return json.dumps({ "Success": False, "Message": "Region must be running to manage oars"})
-                        ready = "http://%s/task/ready/%s" % (self.frontendAddress, job)
-                        report = "http://%s/task/report/%s" % (self.frontendAddress, job)
-                        upload = "http://%s/task/upload/%s" % (self.frontendAddress, job)
+                        ready = "http://%s/server/task/ready/%s" % (self.frontendAddress, job)
+                        report = "http://%s/server/task/report/%s" % (self.frontendAddress, job)
+                        upload = "http://%s/server/task/upload/%s" % (self.frontendAddress, job)
                         if action == "save":
                             if self.procs[proc].saveOar(uname, password, report, upload):
                                 return json.dumps({ "Success": True})

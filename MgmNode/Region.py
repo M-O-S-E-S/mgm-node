@@ -365,8 +365,12 @@ class Region:
             f.write('Location = "%s,%s"\n' % (region["locX"], region["locY"]))
             f.write('InternalAddress = "0.0.0.0"\n')
             f.write('InternalPort = %s\n' % region["httpPort"])
+            f.write('SizeX=%d\n' % 256*int(region["size"]))
+            f.write('SizeY=%d\n' % 256*int(region["size"]))
             f.write('AllowAlternatePorts = False\n')
             f.write('ExternalHostName = "%s"\n' % region["externalAddress"])
+            f.write('SyncServerAddress = 127.0.0.1\n')
+            f.write('SyncServerPort = 15000\n')
             f.close()
         
         # logging config file

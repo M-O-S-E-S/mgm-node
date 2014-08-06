@@ -92,7 +92,7 @@ class RegionWorker( Thread ):
                 if job['name'] == "save_oar":
                     self.saveOar(job["reportUrl"],job["uploadUrl"], job["console"],job["location"],job["region"])
                 elif job['name'] == "load_oar":
-                    self.loadOar(job["ready"],job["report"], job["console"])
+                    self.loadOar(job["ready"],job["report"], job["console"], job["merge"], job["x"], job["y"], job["z"])
                 elif job['name'] == "save_iar":
                     self.saveIar(job["report"],job["upload"],job["console"], job["path"], job["user"], job["password"], job["location"])
                 elif job['name'] == "load_iar":
@@ -178,11 +178,14 @@ class RegionWorker( Thread ):
         self.log.put("[MGM] save iar unknown error")
         print "An error occurred saving iar file, we are not aborted or done"
     
-    def loadOar(self, ready, report, console):
+    def loadOar(self, ready, report, console, merge, x, y, z):
         self.log.put("[MGM] starting load oar task")
         console.read()
         start = time.time()
-        cmd = "load oar %s" % ready
+        if merge == "1":
+            cmd = "load oar --merge --force-terrain --force-parcels --displacement <%s,%s,%s> %s" % (x, y, z, ready)
+        else:
+            cmd = "load oar --displacement <%s,%s,%s> %s" % (x, y, z, ready)
         console.write(cmd);
         done = False
         abort = False
@@ -484,12 +487,12 @@ class Region:
             return False
         return True
         
-    def loadOar(self, uname, password, ready, report ):
+    def loadOar(self, uname, password, ready, report, merge, x, y, z):
         try:
             self.logQueue.put("[MGM] %s requested load oar" % self.name)
             url = "http://127.0.0.1:" + str(self.console)
             console = RestConsole(url, uname, password)
-            self.jobQueue.put({"name": "load_oar", "ready": ready, "report": report, "console": console})
+            self.jobQueue.put({"name": "load_oar", "ready": ready, "report": report, "console": console, "merge": merge, "x":x, "y":y, "z":z})
         except:
             print "exception occurred"
             return False

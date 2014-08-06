@@ -191,9 +191,28 @@ class Slave:
                             return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
                         return json.dumps({ "Success": False, "Message": "Invalid action"})
         return json.dumps({ "Success": False, "Message": "Region does not exist on this Host"})
+    
+    @cherrypy.expose
+    def saveOar(self, name, uname, password, job):
+        #veryify request is coming from the web frontend
+        ip = cherrypy.request.headers["Remote-Addr"]
+        if not ip == self.frontendAddress:
+            print "INFO: Attempted region control from ip %s instead of web frontent" % ip
+            return "Denied, this functionality if restricted to the mgm web app"
+        for proc in self.procs:
+                if self.procs[proc].isRegistered:
+                    if self.procs[proc].name == name:
+                        if not self.procs[proc].isRunning:
+                            return json.dumps({ "Success": False, "Message": "Region must be running to manage oars"})
+                        report = "http://%s/server/task/report/%s" % (self.frontendAddress, job)
+                        upload = "http://%s/server/task/upload/%s" % (self.frontendAddress, job)
+                        if self.procs[proc].saveOar(uname, password, report, upload):
+                            return json.dumps({ "Success": True})
+                        return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
+        return json.dumps({ "Success": False, "Message": "Region does not exist on this Host"})
         
     @cherrypy.expose
-    def oar(self, name, uname, password, job, action):
+    def loadOar(self, name, uname, password, job, merge, x, y, z):
         #veryify request is coming from the web frontend
         ip = cherrypy.request.headers["Remote-Addr"]
         if not ip == self.frontendAddress:
@@ -206,14 +225,7 @@ class Slave:
                             return json.dumps({ "Success": False, "Message": "Region must be running to manage oars"})
                         ready = "http://%s/server/task/ready/%s" % (self.frontendAddress, job)
                         report = "http://%s/server/task/report/%s" % (self.frontendAddress, job)
-                        upload = "http://%s/server/task/upload/%s" % (self.frontendAddress, job)
-                        if action == "save":
-                            if self.procs[proc].saveOar(uname, password, report, upload):
-                                return json.dumps({ "Success": True})
-                            return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
-                        if action == "load":
-                            if self.procs[proc].loadOar(uname, password, ready, report):
-                                return json.dumps({ "Success": True})
-                            return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
-                        return json.dumps({ "Success": False, "Message": "Invalid action"})
+                        if self.procs[proc].loadOar(uname, password, ready, report, merge, x, y, z):
+                            return json.dumps({ "Success": True})
+                        return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
         return json.dumps({ "Success": False, "Message": "Region does not exist on this Host"})

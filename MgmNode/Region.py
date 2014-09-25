@@ -257,8 +257,7 @@ class RegionWorker( Thread ):
         print "An error occurred saving oar file, we are not aborted or done"
 
 class Region:
-    def __init__(self, regionPort, consolePort, procName, binDir, regionDir, dispatchUrl, externalAddress):
-        self.isRegistered = False    
+    def __init__(self, regionPort, consolePort, procName, binDir, regionDir, dispatchUrl, externalAddress):   
         self.proc = None
         self.stats = {}
         
@@ -416,14 +415,6 @@ class Region:
 """)
         cfgFile.close()
     
-    def deregisterRegion(self):
-        self.isRegistered = False
-        self.stopProcess()
-    
-    def registerRegion(self, name):
-        self.name = name
-        self.isRegistered = True
-    
     def start(self):
         self.logQueue.put("[MGM] %s user requested to start" % self.name)
         self.trackStage = "running"
@@ -435,7 +426,7 @@ class Region:
         self.startProcess()
     
     def startProcess(self):
-        if self.isRunning() or not self.isRegistered:
+        if self.isRunning():
             return
         
         if self.workerProcess:

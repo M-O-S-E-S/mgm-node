@@ -20,46 +20,39 @@ import xml.etree.ElementTree as ET
 class Slave:
     
     def __init__(self, conf):
-        # create process blanks
-        self.procs = {}
-        self.loaded = False
-        self.port = conf['port']
-        if len(conf['regionPorts']) < len(conf['consolePorts']):
-            numProcs = len(conf['regionPorts'])
-        else:
-            numProcs = len(conf['consolePorts'])
+        self.availablePorts = []
+        self.registeredRegions = {}
+        
+        statsInterval = conf['interval']
+        self.nodePort = conf['port']
         self.key = uuid.uuid4()
         self.host = conf['host']
         self.frontendAddress = conf['webAddress']
-        for i in range(numProcs):
-            procName = "%d" % (conf['regionPorts'][i])
-            self.procs[procName] = Region(
-                                        conf['regionPorts'][i], 
-                                        conf['consolePorts'][i], 
-                                        procName, 
-                                        conf['binDir'],
-                                        conf['regionDir'],
-                                        self.frontendAddress,
-                                        conf['regionAddress'])
+        self.binDir = conf['binDir']
+        self.regionDir = conf['regionDir']
+        self.publicAddress = conf['regionAddress']
+        for r,c in zip(conf['regionPorts'],conf['consolePorts']):
+            self.availablePorts.append({"port":r,"console":c})
         
         #we can't start up without our master config
-        while not self.loaded:
+        configLoaded = False
+        while not configLoaded:
             try:
-                self.loaded = self.loadRemoteConfig()
+                configLoaded = self.loadRemoteConfig()
             except Exception, e:
                 print "Error contacting MGM: %s" % e
                 time.sleep(30)
     
         self.monitor = MonitorWrapper()
         
-        Monitor(cherrypy.engine, self.updateStats, frequency=10).subscribe()
+        Monitor(cherrypy.engine, self.updateStats, frequency=statsInterval).subscribe()
         cherrypy.engine.subscribe('stop',self.engineExit)
     
         print "node started"
     
     def engineExit(self):
-        for proc in self.procs:
-            self.procs[proc].terminate()
+        for name in self.registeredRegions:
+            self.registeredRegions[name]["proc"].terminate()
     
     def __del__(self):
         self.procs = None
@@ -69,7 +62,7 @@ class Slave:
     def loadRemoteConfig(self):
         #load additional config from master service
         url = "http://%s/server/dispatch/node" % (self.frontendAddress)
-        r = requests.post(url, data={'host':self.host, 'port':self.port, 'key':self.key, 'slots': len(self.procs)}, verify=False)
+        r = requests.post(url, data={'host':self.host, 'port':self.nodePort, 'key':self.key, 'slots': len(self.availablePorts)}, verify=False)
         if not r.status_code == requests.codes.ok:
             raise Exception("Error contacting MGM at %s" % url)
         
@@ -77,34 +70,31 @@ class Slave:
         
         if not result["Success"]:
             raise Exception("Error loading config: %s" % result["Message"])
+            
+        if len(result['Regions']) > len(self.availablePorts):
+            raise Exception("Error: too many regions for configured ports")
                 
         for region in result['Regions']:
-            candidate = None
-            for proc in self.procs:
-                if not self.procs[proc].isRegistered:
-                    candidate = self.procs[proc]
-                    break
-            if not candidate:
-                print "ERROR: too many regions for number of slots"
-            else:
-                candidate.registerRegion(region['name'])
+            port = self.availablePorts.pop(0)
+            self.registeredRegions[region['name']] = {
+                "proc": Region(port["port"],port["console"], region['name'], self.binDir, self.regionDir, self.frontendAddress, self.publicAddress),
+                "port": port
+            }
         return True
-
         
     def updateStats(self):
         self.monitor.updateStatistics()
         stats = {}
         stats['host'] = self.monitor.stats
-        stats['slots'] = len(self.procs)
         stats['processes'] = []
-        for proc in self.procs:
-            if self.procs[proc].isRegistered:
-                self.procs[proc].updateProcStats()
-                p = {}
-                p['name'] = self.procs[proc].name
-                p['running'] = str(self.procs[proc].isRunning())
-                p['stats'] = self.procs[proc].stats
-                stats['processes'].append(p)
+        
+        for name,region in self.registeredRegions.iteritems():
+            region["proc"].updateProcStats()
+            p = {}
+            p['name'] = name
+            p['running'] = str(region["proc"].isRunning())
+            p['stats'] = region["proc"].stats
+            stats['processes'].append(p)
         
         url = "http://%s/server/dispatch/stats/%s" % (self.frontendAddress, self.host)
         r = requests.post(url, data={"json": json.dumps(stats)}, verify=False)

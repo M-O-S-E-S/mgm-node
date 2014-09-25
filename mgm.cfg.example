@@ -15,6 +15,9 @@ console_port_range: 10000-10029
 ; client connectable address for hosted regions
 region_external_address: yyy.yyy.yyy.yyy
 
+; interval in seconds to collect statistics and update MGM on process status
+sample_interval: 10
+
 [ssl]
 ; locations for ssl certificates.  Self-signed generated if missing.
 cert: my_cert.crt

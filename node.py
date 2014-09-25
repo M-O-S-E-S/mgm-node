@@ -52,6 +52,7 @@ def loadConfig(filePath):
     conf['webAddress'] = config.get('node', 'mgm_address')
     conf['certFile'] = config.get('ssl', 'cert')
     conf['keyFile'] = config.get('ssl', 'key')
+    conf['interval'] = int(config.get('node', 'sample_interval'))
     
     portRange = config.get('node','region_port_range')
     consoleRange = config.get('node','console_port_range')

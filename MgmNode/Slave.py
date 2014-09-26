@@ -106,7 +106,6 @@ class Slave:
             print "error uploading stats to master"
         else:
             print "%s - Upload Status: %s" % (time.strftime("%Y-%m-%d %H:%M:%S"), r.content)
-            
 
     @cherrypy.expose
     def index(self):
@@ -160,7 +159,7 @@ class Slave:
             return json.dumps({ "Success": False, "Message": "Unsupported Action"})
     
     @cherrypy.expose
-    def iar(self, name, uname, password, avatarName, avatarPassword, inventoryPath, job, action):
+    def loadIar(self, name, avatarName, avatarPassword, inventoryPath, job):
         #veryify request is coming from the web frontend
         ip = cherrypy.request.headers["Remote-Addr"]
         if not ip == self.frontendAddress:
@@ -174,18 +173,32 @@ class Slave:
         ready = "http://%s/server/task/ready/%s" % (self.frontendAddress, job)
         report = "http://%s/server/task/report/%s" % (self.frontendAddress, job)
         upload = "http://%s/server/task/upload/%s" % (self.frontendAddress, job)
-        if action == "save":
-            if self.registeredRegions[name]["proc"].saveIar(uname, password, report, upload, inventoryPath, avatarName, avatarPassword):
-                return json.dumps({ "Success": True})
-            return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
-        if action == "load":
-            if self.registeredRegions[name]["proc"].loadIar(uname, password, ready, report, inventoryPath, avatarName, avatarPassword):
-                return json.dumps({ "Success": True})
-            return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
-        return json.dumps({ "Success": False, "Message": "Invalid action"})
+
+        if self.registeredRegions[name]["proc"].loadIar(ready, report, inventoryPath, avatarName, avatarPassword):
+            return json.dumps({ "Success": True})
+        return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
+        
+    @cherrypy.expose
+    def saveIar(self, name, avatarName, avatarPassword, inventoryPath, job):
+        #veryify request is coming from the web frontend
+        ip = cherrypy.request.headers["Remote-Addr"]
+        if not ip == self.frontendAddress:
+            print "INFO: Attempted region control from ip %s instead of web frontent" % ip
+            return "Denied, this functionality if restricted to the mgm web app"
+        if not name in self.registeredRegions:
+            return json.dumps({ "Success": False, "Message": "Region not present"})
+        if not self.registeredRegions[name]["proc"].isRunning():
+            return json.dumps({ "Success": False, "Message": "Region must be running to manage iars"})
+                         
+        ready = "http://%s/server/task/ready/%s" % (self.frontendAddress, job)
+        report = "http://%s/server/task/report/%s" % (self.frontendAddress, job)
+        upload = "http://%s/server/task/upload/%s" % (self.frontendAddress, job)
+        if self.registeredRegions[name]["proc"].saveIar(report, upload, inventoryPath, avatarName, avatarPassword):
+            return json.dumps({ "Success": True})
+        return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
     
     @cherrypy.expose
-    def saveOar(self, name, uname, password, job):
+    def saveOar(self, name, job):
         #veryify request is coming from the web frontend
         ip = cherrypy.request.headers["Remote-Addr"]
         if not ip == self.frontendAddress:
@@ -199,12 +212,12 @@ class Slave:
             
         report = "http://%s/server/task/report/%s" % (self.frontendAddress, job)
         upload = "http://%s/server/task/upload/%s" % (self.frontendAddress, job)
-        if self.registeredRegions[name]["proc"].saveOar(uname, password, report, upload):
+        if self.registeredRegions[name]["proc"].saveOar(report, upload):
             return json.dumps({ "Success": True})
         return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
         
     @cherrypy.expose
-    def loadOar(self, name, uname, password, job, merge, x, y, z):
+    def loadOar(self, name, job, merge, x, y, z):
         #veryify request is coming from the web frontend
         ip = cherrypy.request.headers["Remote-Addr"]
         if not ip == self.frontendAddress:
@@ -218,6 +231,6 @@ class Slave:
             
         ready = "http://%s/server/task/ready/%s" % (self.frontendAddress, job)
         report = "http://%s/server/task/report/%s" % (self.frontendAddress, job)
-        if self.registeredRegions[name]["proc"].loadOar(uname, password, ready, report, merge, x, y, z):
+        if self.registeredRegions[name]["proc"].loadOar(ready, report, merge, x, y, z):
             return json.dumps({ "Success": True})
         return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})

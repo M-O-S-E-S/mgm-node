@@ -14,6 +14,7 @@ from psutil import Popen
 from RestConsole import RestConsole
 
 class RegionLogger( Thread ):
+    """A threaded class to capture stdout and stderr, and upload them in batches to MGM"""
 
     def __init__(self, url, region, stderr, stdout, queue):
         super(RegionLogger, self).__init__()
@@ -71,6 +72,8 @@ class RegionLogger( Thread ):
             time.sleep(.25)
 
 class RegionWorker( Thread ):
+    """a threaded class to handle long running tasks that may output files locally"""
+    
     def __init__(self, jobQueue, logQueue):
         super(RegionWorker, self).__init__()
         self.queue = jobQueue
@@ -257,6 +260,7 @@ class RegionWorker( Thread ):
         print "An error occurred saving oar file, we are not aborted or done"
 
 class Region:
+    """A wrapper class aroudn a psutil popen instance of a region; handling logging and beckground tasks associated with this region"""
     def __init__(self, regionPort, consolePort, procName, binDir, regionDir, dispatchUrl, externalAddress):   
         self.proc = None
         self.stats = {}
@@ -354,6 +358,11 @@ class Region:
                 f.write('[%s]\n' % section)
                 for item in region[section]:
                     f.write('\t%s = "%s"\n' %(item, region[section][item]))
+                    if section == "Network":
+                        if item == "ConsoleUser":
+                            self.consoleUser = region[section][item]
+                        if item == "ConsolePass":
+                            self.consolePassword = region[section][item]
             f.close()
         
         # regions file
@@ -468,42 +477,42 @@ class Region:
                 pass
             self.logQueue.shutdown = True
 
-    def saveOar(self, uname, password, reportUrl, uploadUrl):
+    def saveOar(self, reportUrl, uploadUrl):
         try:
             self.logQueue.put("[MGM] %s requested save oar" % self.name)
             url = "http://127.0.0.1:" + str(self.console)
-            console = RestConsole(url, uname, password)
+            console = RestConsole(url, self.consoleUser, self.consolePassword)
             self.jobQueue.put({"name": "save_oar", "reportUrl": reportUrl, "uploadUrl": uploadUrl, "console": console, "region":self.name, "location":self.startDir})
         except:
             return False
         return True
         
-    def loadOar(self, uname, password, ready, report, merge, x, y, z):
+    def loadOar(self, ready, report, merge, x, y, z):
         try:
             self.logQueue.put("[MGM] %s requested load oar" % self.name)
             url = "http://127.0.0.1:" + str(self.console)
-            console = RestConsole(url, uname, password)
+            console = RestConsole(url, self.consoleUser, self.consolePassword)
             self.jobQueue.put({"name": "load_oar", "ready": ready, "report": report, "console": console, "merge": merge, "x":x, "y":y, "z":z})
         except:
             print "exception occurred"
             return False
         return True
         
-    def loadIar(self, uname, pword, ready, reportUrl, invPath, avatar, password):
+    def loadIar(self, ready, reportUrl, invPath, avatar, password):
         try:
             self.logQueue.put("[MGM] User requested load iar")
             url = "http://127.0.0.1:" + str(self.console)
-            console = RestConsole(url, uname, pword)
+            console = RestConsole(url, self.consoleUser, self.consolePassword)
             self.jobQueue.put({"name": "load_iar", "ready": ready, "report": reportUrl, "console": console, "path": invPath, "user":avatar, "password":password})
         except:
             return False
         return True
         
-    def saveIar(self, uname, pword, reportUrl, uploadUrl, invPath, avatar, password):
+    def saveIar(self, reportUrl, uploadUrl, invPath, avatar, password):
         try:
             self.logQueue.put("[MGM] User requested save iar")
             url = "http://127.0.0.1:" + str(self.console)
-            console = RestConsole(url, uname, pword)
+            console = RestConsole(url, self.consoleUser, self.consolePassword)
             self.jobQueue.put({"name": "save_iar", "report": reportUrl, "upload": uploadUrl, "console": console, "path": invPath, "user":avatar, "password":password, "location":self.startDir})
         except:
             return False

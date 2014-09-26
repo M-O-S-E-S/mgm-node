@@ -97,7 +97,11 @@ class Slave:
             stats['processes'].append(p)
         
         url = "http://%s/server/dispatch/stats/%s" % (self.frontendAddress, self.host)
-        r = requests.post(url, data={"json": json.dumps(stats)}, verify=False)
+        try:
+            r = requests.post(url, data={"json": json.dumps(stats)}, verify=False)
+        except requests.ConnectionError:
+            print "error connecting to master"
+            return
         if not r.status_code == requests.codes.ok:
             print "error uploading stats to master"
         else:
@@ -117,42 +121,41 @@ class Slave:
         if not ip == self.frontendAddress:
             print "INFO: Attempted region control from ip %s instead of web frontent" % ip
             return "Denied, this functionality if restricted to the mgm web app"
-        #find region in processes, if it exists
 
         #perform the action
         if action == "add":
             #check if region already present here
-            candidate = None
-            for proc in self.procs:
-                if self.procs[proc].isRegistered:
-                    if self.procs[proc].name == name:
-                        #duplicate registration, ignore
-                        return json.dumps({ "Success": False, "Message": "Region already exists on this Node"})
-                else:
-                    candidate = self.procs[proc]
-            if not candidate:
+            if name in self.registeredRegions:
+                return json.dumps({ "Success": False, "Message": "Region already exists on this Node"})
+            try:
+                port = self.availablePorts.pop(0)
+            except Exception, e:
                 return json.dumps({ "Success": false, "Message": "No slots remaining"})
-            candidate.registerRegion(name)
+            self.registeredRegions[region['name']] = {
+                "proc": Region(port["port"],port["console"], region['name'], self.binDir, self.regionDir, self.frontendAddress, self.publicAddress),
+                "port": port
+            }
             return json.dumps({ "Success": True})
         elif action == "remove":
             #find region, and remove if found
-            for proc in self.procs:
-                if self.procs[proc].isRegistered and self.procs[proc].name == name:
-                    self.procs[proc].deregisterRegion()
-                    return json.dumps({ "Success": True})
-            return json.dumps({ "Success": False, "Message": "Region not present"})
+            if not name in self.registeredRegions:
+                return json.dumps({ "Success": False, "Message": "Region not present"})
+            if self.registeredRegions[name]["proc"].isRunning():
+                return json.dumps({ "Success": False, "Message": "Region is still running"})
+            port = self.registeredRegions[name]["port"]
+            del self.registeredRegions[name]
+            self.availablePorts.insert(0,port)
+            return json.dumps({ "Success": True})
         elif action == "start":
-            for proc in self.procs:
-                if self.procs[proc].isRegistered and self.procs[proc].name == name:
-                    self.procs[proc].start()
-                    return json.dumps({ "Success": True})
-            return json.dumps({ "Success": False, "Message": "Region not present"})
+            if not name in self.registeredRegions:
+                return json.dumps({ "Success": False, "Message": "Region not present"})
+            self.registeredRegions[name]["proc"].start()    
+            return json.dumps({ "Success": True})
         elif action == "stop":
-            for proc in self.procs:
-                if self.procs[proc].isRegistered and self.procs[proc].name == name:
-                    self.procs[proc].stop()
-                    return json.dumps({ "Success": True})
-            return json.dumps({ "Success": False, "Message": "Region not present"})
+            if not name in self.registeredRegions:
+                return json.dumps({ "Success": False, "Message": "Region not present"})
+            self.registeredRegions[name]["proc"].stop()
+            return json.dumps({ "Success": True})
         else:
             return json.dumps({ "Success": False, "Message": "Unsupported Action"})
     
@@ -163,24 +166,23 @@ class Slave:
         if not ip == self.frontendAddress:
             print "INFO: Attempted region control from ip %s instead of web frontent" % ip
             return "Denied, this functionality if restricted to the mgm web app"
-        for proc in self.procs:
-                if self.procs[proc].isRegistered:
-                    if self.procs[proc].name == name:
-                        if not self.procs[proc].isRunning:
-                            return json.dumps({ "Success": False, "Message": "Region must be running to manage iars"})
-                        ready = "http://%s/server/task/ready/%s" % (self.frontendAddress, job)
-                        report = "http://%s/server/task/report/%s" % (self.frontendAddress, job)
-                        upload = "http://%s/server/task/upload/%s" % (self.frontendAddress, job)
-                        if action == "save":
-                            if self.procs[proc].saveIar(uname, password, report, upload, inventoryPath, avatarName, avatarPassword):
-                                return json.dumps({ "Success": True})
-                            return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
-                        if action == "load":
-                            if self.procs[proc].loadIar(uname, password, ready, report, inventoryPath, avatarName, avatarPassword):
-                                return json.dumps({ "Success": True})
-                            return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
-                        return json.dumps({ "Success": False, "Message": "Invalid action"})
-        return json.dumps({ "Success": False, "Message": "Region does not exist on this Host"})
+        if not name in self.registeredRegions:
+            return json.dumps({ "Success": False, "Message": "Region not present"})
+        if not self.registeredRegions[name]["proc"].isRunning():
+            return json.dumps({ "Success": False, "Message": "Region must be running to manage iars"})
+                         
+        ready = "http://%s/server/task/ready/%s" % (self.frontendAddress, job)
+        report = "http://%s/server/task/report/%s" % (self.frontendAddress, job)
+        upload = "http://%s/server/task/upload/%s" % (self.frontendAddress, job)
+        if action == "save":
+            if self.registeredRegions[name]["proc"].saveIar(uname, password, report, upload, inventoryPath, avatarName, avatarPassword):
+                return json.dumps({ "Success": True})
+            return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
+        if action == "load":
+            if self.registeredRegions[name]["proc"].loadIar(uname, password, ready, report, inventoryPath, avatarName, avatarPassword):
+                return json.dumps({ "Success": True})
+            return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
+        return json.dumps({ "Success": False, "Message": "Invalid action"})
     
     @cherrypy.expose
     def saveOar(self, name, uname, password, job):
@@ -189,17 +191,17 @@ class Slave:
         if not ip == self.frontendAddress:
             print "INFO: Attempted region control from ip %s instead of web frontent" % ip
             return "Denied, this functionality if restricted to the mgm web app"
-        for proc in self.procs:
-                if self.procs[proc].isRegistered:
-                    if self.procs[proc].name == name:
-                        if not self.procs[proc].isRunning:
-                            return json.dumps({ "Success": False, "Message": "Region must be running to manage oars"})
-                        report = "http://%s/server/task/report/%s" % (self.frontendAddress, job)
-                        upload = "http://%s/server/task/upload/%s" % (self.frontendAddress, job)
-                        if self.procs[proc].saveOar(uname, password, report, upload):
-                            return json.dumps({ "Success": True})
-                        return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
-        return json.dumps({ "Success": False, "Message": "Region does not exist on this Host"})
+            
+        if not name in self.registeredRegions:
+            return json.dumps({ "Success": False, "Message": "Region not present"})
+        if not self.registeredRegions[name]["proc"].isRunning():
+            return json.dumps({ "Success": False, "Message": "Region must be running to manage oars"})
+            
+        report = "http://%s/server/task/report/%s" % (self.frontendAddress, job)
+        upload = "http://%s/server/task/upload/%s" % (self.frontendAddress, job)
+        if self.registeredRegions[name]["proc"].saveOar(uname, password, report, upload):
+            return json.dumps({ "Success": True})
+        return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
         
     @cherrypy.expose
     def loadOar(self, name, uname, password, job, merge, x, y, z):
@@ -208,14 +210,14 @@ class Slave:
         if not ip == self.frontendAddress:
             print "INFO: Attempted region control from ip %s instead of web frontent" % ip
             return "Denied, this functionality if restricted to the mgm web app"
-        for proc in self.procs:
-                if self.procs[proc].isRegistered:
-                    if self.procs[proc].name == name:
-                        if not self.procs[proc].isRunning:
-                            return json.dumps({ "Success": False, "Message": "Region must be running to manage oars"})
-                        ready = "http://%s/server/task/ready/%s" % (self.frontendAddress, job)
-                        report = "http://%s/server/task/report/%s" % (self.frontendAddress, job)
-                        if self.procs[proc].loadOar(uname, password, ready, report, merge, x, y, z):
-                            return json.dumps({ "Success": True})
-                        return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
-        return json.dumps({ "Success": False, "Message": "Region does not exist on this Host"})
+        
+        if not name in self.registeredRegions:
+            return json.dumps({ "Success": False, "Message": "Region not present"})
+        if not self.registeredRegions[name]["proc"].isRunning():
+            return json.dumps({ "Success": False, "Message": "Region must be running to manage oars"})
+            
+        ready = "http://%s/server/task/ready/%s" % (self.frontendAddress, job)
+        report = "http://%s/server/task/report/%s" % (self.frontendAddress, job)
+        if self.registeredRegions[name]["proc"].loadOar(uname, password, ready, report, merge, x, y, z):
+            return json.dumps({ "Success": True})
+        return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})

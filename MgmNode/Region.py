@@ -287,7 +287,11 @@ class Region:
         self.startDir = os.path.join(regionDir, self.name)
         if not os.path.isdir(self.startDir):
             shutil.copytree(binDir, self.startDir)
-                
+        else:
+			#update binaries if they have changed
+			if os.path.getmtime(regionDir) > os.path.getmtime(self.startDir):
+				shutil.rmtree(self.startDir)
+				shutil.copytree(binDir, self.startDir)
         self.configFile = os.path.join(self.startDir, '%s.cfg' % procName)
         self.exe = os.path.join(self.startDir, 'OpenSim.exe')
         
@@ -299,8 +303,10 @@ class Region:
         
     def __del__(self):
         self.terminate()
-            
+    
+    #called on Slave shutdown        
     def terminate(self):
+        '''Kill process'''
         if self.proc:
             try:
                 self.proc.kill()

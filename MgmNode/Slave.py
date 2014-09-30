@@ -129,9 +129,9 @@ class Slave:
             try:
                 port = self.availablePorts.pop(0)
             except Exception, e:
-                return json.dumps({ "Success": false, "Message": "No slots remaining"})
-            self.registeredRegions[region['name']] = {
-                "proc": Region(port["port"],port["console"], region['name'], self.binDir, self.regionDir, self.frontendAddress, self.publicAddress),
+                return json.dumps({ "Success": False, "Message": "No slots remaining"})
+            self.registeredRegions[name] = {
+                "proc": Region(port["port"],port["console"], name, self.binDir, self.regionDir, self.frontendAddress, self.publicAddress),
                 "port": port
             }
             return json.dumps({ "Success": True})

@@ -19,7 +19,7 @@ class Monitor:
         
         elapsed = time.time() - self.last_time
         self.last_time = time.time()
-
+        stats["timestamp"] = self.last_time
         pnic_vals_after = psutil.network_io_counters(pernic=False)
         
         stats["netSentPer"] = (pnic_vals_after.bytes_sent - self.pnic_vals_before.bytes_sent)/elapsed

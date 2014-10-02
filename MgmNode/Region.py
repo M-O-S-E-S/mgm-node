@@ -3,7 +3,7 @@ Created on Feb 1, 2013
 
 @author: mheilman
 '''
-import os, psutil, json, time, requests, threading, Queue as QX, re, shutil
+import os, psutil, json, time, requests, threading, Queue as QX, re, shutil, time
 from multiprocessing import Process, Queue
 from threading import Thread
 from subprocess import PIPE
@@ -338,7 +338,8 @@ class Region:
     def updateProcStats(self):
         """we can access most of this for the web, but we are compiling it to send xml to MGM"""
         stats = {}
-        stats["stage"] = self.trackStage	
+        stats["stage"] = self.trackStage
+        stats["timestamp"] = time.time()
         if self.isRunning():
 			#try:
             stats["uptime"] = time.time() - self.proc.create_time

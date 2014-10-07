@@ -17,11 +17,11 @@ MgmNode is a simple python application.  It requires an installed mgm instance b
 MgmNode is currently tested on python 2.7, and will run wherever that, and its required packages are available.  
 
 1. Clone mgmNode into /opt
-1. get Opensim 0.7.6 and unzip into /opt
+1. get Opensim 0.8.1 and unzip into /opt
 1. Create directory /opt/regions
 1. Copy /opt/mgmNode/mgm.cfg.example to /opt/mgmNode/mgm.cfg
 1. Update mgm.cfg to match your file layout, and network ports.
-1. Run `python mgmNode/node.py` to confirm all apackages present and test isntallation.  If you have many ports configured this may take a few minutes before it prints to the console, as it is performing a file copy from opensim into regions
+1. Run `python mgmNode/mgmNode.py` to confirm all apackages present and test isntallation.  If you have many ports configured this may take a few minutes before it prints to the console, as it is performing a file copy from opensim into regions
 1. Add the ip address of your mgmNode host to MGM.  If they are on the same host, use external ip addresses instead of 127.0.0.1
 1. Reference the mgmNode/upstart script for running mgmNode as a service
 1.  Allow ports 8080 and your configured ports through iptables if necessary

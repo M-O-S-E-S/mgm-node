@@ -99,6 +99,7 @@ if sys.platform == "win32":
             cherrypy.engine.block()
             
 def start():
+    os.chdir(modulePath())
     conf = loadConfig(os.path.join(modulePath() ,'mgm.cfg'))
     app = Slave(conf)
     if not os.path.isfile(conf['certFile']) or not os.path.isfile(conf['keyFile']):

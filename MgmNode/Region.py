@@ -8,10 +8,11 @@ from multiprocessing import Process, Queue
 from threading import Thread
 from subprocess import PIPE
 
-
 from psutil import Popen
 
 from RestConsole import RestConsole
+
+PSUTIL2 = psutil.version_info >= (2, 0)
 
 class RegionLogger( Thread ):
     """A threaded class to capture stdout and stderr, and upload them in batches to MGM"""
@@ -321,7 +322,8 @@ class Region:
         if not self.proc:
             return False
         try:
-            if self.proc.status in [psutil.STATUS_RUNNING, psutil.STATUS_SLEEPING, psutil.STATUS_DISK_SLEEP]:
+            status = self.proc.status() if PSUTIL2 else self.proc.status
+            if status in [psutil.STATUS_RUNNING, psutil.STATUS_SLEEPING, psutil.STATUS_DISK_SLEEP]:
                 return True
         except psutil.NoSuchProcess:
             return False
@@ -341,8 +343,8 @@ class Region:
         stats["stage"] = self.trackStage
         stats["timestamp"] = time.time()
         if self.isRunning():
-			#try:
-            stats["uptime"] = time.time() - self.proc.create_time
+            ctime = self.proc.create_time() if PSUTIL2 else self.proc.create_time
+            stats["uptime"] = time.time() - ctime
             stats["memPercent"] = self.proc.get_memory_percent()
             stats["memKB"] = self.proc.get_memory_info().rss / 1024
             stats["cpuPercent"] = self.proc.get_cpu_percent(0.1)

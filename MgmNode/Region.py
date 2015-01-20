@@ -170,7 +170,7 @@ class RegionWorker( Thread ):
         if done:
             #post iar file back to mgm with job number
             iar = os.path.join(iarDir,iarName)
-            r = requests.post(upload, data={"Success": True}, files={'file': (iarName, open(iar, 'rb'))}, verify=False)
+            r = requests.post(upload, data={"Success": True}, files={'file': (user, open(iar, 'rb'))}, verify=False)
             os.remove(iar)
             self.log.put("[MGM] save iar completed successfully")
             return

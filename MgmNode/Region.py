@@ -125,7 +125,7 @@ class RegionWorker( Thread ):
                     continue
                 if not "[INVENTORY ARCHIVER]" in line:
                     continue
-                if not "Loaded archive" in line:
+                if not "Successfully" in line:
                     continue
                 done = True
                 break

@@ -25,13 +25,40 @@ class Slave(resource.Resource):
         return Resource.getChild(self, name, request)
 
     def render_GET(self, request):
-        print request.__dict__
         return "<html><body><h1>MOSES Grid Manager Node: %s</h1></body></html>" % self.host
-    
+
+    #receive commands from the frontend
+    #TODO, switch arguments to url parameters instead of posted action argument
     def render_POST(self, request):
+        #perform ip verification
+        if not request.getClientIP() == self.frontendAddress:
+            print "INFO: Attempted region control from ip %s instead of web frontent" % request.getClientIP()
+            return "Denied, this functionality if restricted to the mgm web app"
         urlParts = request.uri.split("/")
+        if len(urlParts) < 2:
+            return json.dumps({ "Success": False, "Message": "Invalid Route"})
+        if urlParts[1] == "region":
+            #region [add|remove|start|stop]
+            if not 'action' in request.args or not 'name' in request.args:
+                return json.dumps({ "Success": False, "Message": "Invalid arguments"})
+            return self.region(request.args['action'][0],request.args['name'][0])
+            return json.dumps({ "Success": False, "Message": "Not Implemented"})
+        elif urlParts[1] == "loadIar":
+            #loadIar
+            pass
+        elif urlParts[1] == "saveIar":
+            #saveIar
+            pass
+        elif urlParts[1] == "saveOar":
+            #saveOar
+            pass
+        elif urlParts[1] == "loadOar":
+            #loadOar
+            pass
+        
         print urlParts
-        return "Wah Wah"
+        print request.args
+        return json.dumps({ "Success": False, "Message": "Invalid Route"})
     
     def __init__(self, conf):
         self.availablePorts = []
@@ -112,15 +139,8 @@ class Slave(resource.Resource):
 
     # FRONT END FUNCTION CALLS
 
-    @cherrypy.expose
-    def region(self, name, action):
-        #veryify request is coming from the web frontend
-        ip = cherrypy.request.headers["Remote-Addr"]
-        if not ip == self.frontendAddress:
-            print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-            return "Denied, this functionality if restricted to the mgm web app"
-
-        #perform the action
+    def region(self, action, name):
+        print action
         if action == "add":
             #check if region already present here
             if name in self.registeredRegions:
@@ -157,7 +177,6 @@ class Slave(resource.Resource):
         else:
             return json.dumps({ "Success": False, "Message": "Unsupported Action"})
     
-    @cherrypy.expose
     def loadIar(self, name, avatarName, avatarPassword, inventoryPath, job):
         #veryify request is coming from the web frontend
         ip = cherrypy.request.headers["Remote-Addr"]
@@ -177,7 +196,6 @@ class Slave(resource.Resource):
             return json.dumps({ "Success": True})
         return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
         
-    @cherrypy.expose
     def saveIar(self, name, avatarName, avatarPassword, inventoryPath, job):
         #veryify request is coming from the web frontend
         ip = cherrypy.request.headers["Remote-Addr"]
@@ -196,7 +214,6 @@ class Slave(resource.Resource):
             return json.dumps({ "Success": True})
         return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
     
-    @cherrypy.expose
     def saveOar(self, name, job):
         #veryify request is coming from the web frontend
         ip = cherrypy.request.headers["Remote-Addr"]
@@ -215,7 +232,6 @@ class Slave(resource.Resource):
             return json.dumps({ "Success": True})
         return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
         
-    @cherrypy.expose
     def loadOar(self, name, job, merge, x, y, z):
         #veryify request is coming from the web frontend
         ip = cherrypy.request.headers["Remote-Addr"]

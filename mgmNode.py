@@ -13,7 +13,7 @@ import socket, string
 from OpenSSL import crypto, SSL
 
 from twisted.web import server, resource
-from twisted.internet import reactor
+from twisted.internet import reactor, ssl
 
 def modulePath():
     if hasattr(sys,"frozen"):
@@ -71,23 +71,8 @@ def loadConfig(filePath):
 
 os.chdir(modulePath())
 conf = loadConfig(os.path.join(modulePath() ,'mgm.cfg'))
-#app = Slave(conf)
-#if not os.path.isfile(conf['certFile']) or not os.path.isfile(conf['keyFile']):
-#    generateCerts(conf['certFile'], conf['keyFile'])
-#cherrypy.config.update({
-#    'global':{
-#        'server.socket_host':'0.0.0.0',
-#        'server.socket_port':conf['port'],
-#        'log.screen': True,
-#        'engine.autoreload.on': False,
-#        'engine.SIGHUP': None,
-#        'engine.SIGTERM': None,
-#        'server.ssl_module': 'pyopenssl',
-#        'server.ssl_certificate':conf['certFile'],
-#        'server.ssl_private_key':conf['keyFile']
-#    }
-#})
-#cherrypy.quickstart(app, config={'/': {}})
+if not os.path.isfile(conf['certFile']) or not os.path.isfile(conf['keyFile']):
+    generateCerts(conf['certFile'], conf['keyFile'])
 site = server.Site(Slave(conf))
-reactor.listenTCP(conf['port'], site)
+reactor.listenSSL(conf['port'], site, ssl.DefaultOpenSSLContextFactory(conf['keyFile'],conf['certFile']))
 reactor.run()

@@ -4,13 +4,16 @@ Created on Sep 22, 2011
 
 @author: mheilman
 '''
-import sys, os, cherrypy, ConfigParser
+import sys, os, ConfigParser
 
 from MgmNode.Slave import Slave
 
 import socket, string
 
 from OpenSSL import crypto, SSL
+
+from twisted.web import server, resource
+from twisted.internet import reactor
 
 def modulePath():
     if hasattr(sys,"frozen"):
@@ -64,66 +67,27 @@ def loadConfig(filePath):
     conf['consolePorts'] = range(int(vals[0]),int(vals[1])+1)
 
     return conf
-    
-
-if sys.platform == "win32":
-    import win32serviceutil, win32service
-    class NodeService(win32serviceutil.ServiceFramework):
-        _svc_name_ = "MGMNode"
-        _svc_display_name_ = "MGM Host Node"
-        
-        def SvcStop(self):
-            self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
-            cherrypy.engine.exit()
-            self.ReportServiceStatus(win32service.SERVICE_STOPPED)
-        
-        def SvcDoRun(self):
-            self.ReportServiceStatus(win32service.SERVICE_RUNNING)
-            localPath = modulePath()
-            conf = loadConfig(os.path.join(localPath,'mgm.cfg'))
-            app = Slave(conf)
-            cherrypy.tree.mount(app, '/', config={'/': {}})
-            cherrypy.config.update({
-                'global':{
-                    'server.socket_host':'0.0.0.0',
-                    'server.socket_port':conf['port'],
-                    'log.screen': True,
-                    'log.error_file': os.path.join(modulePath(),"error.log"),
-                    'log.access_file': os.path.join(modulePath(),"access.log"),
-                    'engine.autoreload.on': False,
-                    'engine.SIGHUP': None,
-                    'engine.SIGTERM': None
-                }
-            })
-            cherrypy.engine.start()
-            cherrypy.engine.block()
             
-def start():
-    os.chdir(modulePath())
-    conf = loadConfig(os.path.join(modulePath() ,'mgm.cfg'))
-    app = Slave(conf)
-    if not os.path.isfile(conf['certFile']) or not os.path.isfile(conf['keyFile']):
-        generateCerts(conf['certFile'], conf['keyFile'])
-    cherrypy.config.update({
-        'global':{
-            'server.socket_host':'0.0.0.0',
-            'server.socket_port':conf['port'],
-            'log.screen': True,
-            'engine.autoreload.on': False,
-            'engine.SIGHUP': None,
-            'engine.SIGTERM': None,
-            'server.ssl_module': 'pyopenssl',
-            'server.ssl_certificate':conf['certFile'],
-            'server.ssl_private_key':conf['keyFile']
-        }
-    })
-    cherrypy.quickstart(app, config={'/': {}})
 
-if __name__ == '__main__':
-    if len(sys.argv) > 1 and sys.argv[1] == "test":
-        start()
-    else:
-        if sys.platform == "win32":
-            win32serviceutil.HandleCommandLine(NodeService)
-        else:
-            start()
+os.chdir(modulePath())
+conf = loadConfig(os.path.join(modulePath() ,'mgm.cfg'))
+#app = Slave(conf)
+#if not os.path.isfile(conf['certFile']) or not os.path.isfile(conf['keyFile']):
+#    generateCerts(conf['certFile'], conf['keyFile'])
+#cherrypy.config.update({
+#    'global':{
+#        'server.socket_host':'0.0.0.0',
+#        'server.socket_port':conf['port'],
+#        'log.screen': True,
+#        'engine.autoreload.on': False,
+#        'engine.SIGHUP': None,
+#        'engine.SIGTERM': None,
+#        'server.ssl_module': 'pyopenssl',
+#        'server.ssl_certificate':conf['certFile'],
+#        'server.ssl_private_key':conf['keyFile']
+#    }
+#})
+#cherrypy.quickstart(app, config={'/': {}})
+site = server.Site(Slave(conf))
+reactor.listenTCP(conf['port'], site)
+reactor.run()

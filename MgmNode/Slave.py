@@ -7,17 +7,31 @@ Created on Jan 30, 2013
 import cherrypy, os
 
 from Region import Region
-import threading
 import time, uuid, requests, logging, logging.handlers, json
 from os import listdir
 from os.path import isfile, join
 from Monitor import Monitor as MonitorWrapper
-from cherrypy.process.plugins import Monitor
-import cherrypy
 
 import xml.etree.ElementTree as ET
 
-class Slave:
+from twisted.web import server, resource
+from twisted.internet import reactor, task
+
+class Slave(resource.Resource):
+    isLeaf = True
+    def getChild(self, name, request):
+        if name == '':
+            return self
+        return Resource.getChild(self, name, request)
+
+    def render_GET(self, request):
+        print request.__dict__
+        return "<html><body><h1>MOSES Grid Manager Node: %s</h1></body></html>" % self.host
+    
+    def render_POST(self, request):
+        urlParts = request.uri.split("/")
+        print urlParts
+        return "Wah Wah"
     
     def __init__(self, conf):
         self.availablePorts = []
@@ -42,22 +56,11 @@ class Slave:
             except Exception, e:
                 print "Error contacting MGM: %s" % e
                 time.sleep(30)
-    
+        
         self.monitor = MonitorWrapper()
         
-        Monitor(cherrypy.engine, self.updateStats, frequency=statsInterval).subscribe()
-        cherrypy.engine.subscribe('stop',self.engineExit)
-    
-        print "node started"
-    
-    def engineExit(self):
-        for name in self.registeredRegions:
-            self.registeredRegions[name]["proc"].terminate()
-    
-    def __del__(self):
-        self.procs = None
-        self.monTimer.cancel()
-        print "node stopping"
+        recurring = task.LoopingCall(self.updateStats)
+        recurring.start(statsInterval)
     
     def loadRemoteConfig(self):
         #load additional config from master service
@@ -107,10 +110,6 @@ class Slave:
         else:
             print "%s - Upload Status: %s" % (time.strftime("%Y-%m-%d %H:%M:%S"), r.content)
 
-    @cherrypy.expose
-    def index(self):
-        return "<html><body><h1>MOSES Grid Manager Node: %s</h1></body></html>" % self.host
-    
     # FRONT END FUNCTION CALLS
 
     @cherrypy.expose

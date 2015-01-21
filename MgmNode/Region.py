@@ -378,6 +378,7 @@ class Region:
         self.pid = reactor.spawnProcess(self.pp, starter[0], args=starter,path=self.startDir)
     
     def stop(self):
+        print "%s signalled kill" % self.name
         self.pp.transport.signalProcess("KILL")
         
     def stopProcess(self):

@@ -17,14 +17,15 @@ from twisted.internet import reactor, protocol, task
 PSUTIL2 = psutil.version_info >= (2, 0)
 
 class RegionLogger( protocol.ProcessProtocol ):
-    """A threaded class to capture stdout and stderr, and upload them in batches to MGM"""
+    """A twisted process protocol to capture logging data from the opensim process"""
 
-    def __init__(self, url, region):
+    def __init__(self, url, region, receiveLog):
         self. messages = []
         self.regexp = re.compile(r'^{[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}}.*')
         self.url = "http://%s/server/dispatch/logs/%s" % (url,region)
         self.region = region
         self.isRunning = False
+        self.sendLog = receiveLog
         
         recurring = task.LoopingCall(self.reportLogs)
         recurring.start(10)
@@ -34,6 +35,7 @@ class RegionLogger( protocol.ProcessProtocol ):
         self.isRunning = True
         
     def outReceived(self, line):
+        self.sendLog(line)
         if self.regexp.search(line) is not None:
             parts = line.split("-", 1)
             log = {}
@@ -60,20 +62,18 @@ class RegionLogger( protocol.ProcessProtocol ):
             self.messages.append(log)
     
     def inConnectionLost(self):
-        print "stdin closed on %s" % self.region
+        pass
         
     def outConnectionLost(self):
-        print "stdout closed on %s" % self.region
+        pass
         
     def errConnectionLost(self):
-        print "stderr closed on %s" % self.region
+        pass
         
     def processExited(self, reason):
-        print "region %s exited with reason %s" % (self.region, reason)
         self.isRunning = False
         
     def processEnded(self, reason):
-        print "region %s ended with reason %s" % (self.region, reason)
         self.isRunning = False
         
     def reportLogs(self):
@@ -84,193 +84,143 @@ class RegionLogger( protocol.ProcessProtocol ):
                 print "Error sending %s: %s" % (self.region, req.content)
 	
 
-class RegionWorker( Thread ):
-    """a threaded class to handle long running tasks that may output files locally"""
+class RegionWorker:
+    """a companion class to RegionLogger to monitor the application output for specific tasks"""
     
-    def __init__(self, jobQueue, logQueue):
-        super(RegionWorker, self).__init__()
+    def __init__(self, jobQueue):
         self.queue = jobQueue
-        self.log = logQueue
         self.shutdown = False
-    
-    def run(self):
-        self.log.put("[MGM] region worker process started")
+        self.currentJob = False
+        self.processLog = False
+        reactor.callLater(10, self.pollForWork)
+        
+    def pollForWork(self):
         try:
-            while not self.shutdown:
-                time.sleep(5)
-                #block and wait for a new job
-                try:
-                    job = self.queue.get(False)
-                except QX.Empty:
-                    continue
-                
-                #operate
-                if job['name'] == "save_oar":
-                    self.saveOar(job["reportUrl"],job["uploadUrl"], job["console"],job["location"],job["region"])
-                elif job['name'] == "load_oar":
-                    self.loadOar(job["ready"],job["report"], job["console"], job["merge"], job["x"], job["y"], job["z"])
-                elif job['name'] == "save_iar":
-                    self.saveIar(job["report"],job["upload"],job["console"], job["path"], job["user"], job["password"], job["location"])
-                elif job['name'] == "load_iar":
-                    self.loadIar(job["ready"],job["report"], job["console"], job["path"], job["user"], job["password"])
-                else:
-                    print "invalid job %s, ignoring" % job['name']
-        except:
-            self.log.put("[MGM] region worker process exiting")
-            #we most likely received a sigint
-            pass
-                
-    def loadIar(self, ready, report, console, inventoryPath, user, password):
-        self.log.put("[MGM] starting load iar task")
-        console.read()
-        start = time.time()
-        cmd = "load iar %s %s %s %s" % (user, inventoryPath, password, ready)
-        console.write(cmd);
-        done = False
-        abort = False
-        while not done and not abort:
-            time.sleep(5)
-            for line in console.readLine():
-                #timeout this function after an hour
-                if (time.time() - start) > 60*60:
-                    abort = True
-                    continue
-                if not "[INVENTORY ARCHIVER]" in line:
-                    continue
-                if not "Successfully" in line:
-                    continue
-                done = True
-                break
-                
-        console.close()
-        if done:
-            # report back to master
-            r = requests.post(report, data={"Success": True, "Done": True}, verify=False)
-            self.log.put("[MGM] load iar completed successfully")
+            job = self.queue.get(False)
+        except QX.Empty:
+            reactor.callLater(10, self.pollForWork)
             return
-        if abort:
-            r = requests.post(report, data={"Success": False, "Done": True, "Message": "Timeout.  Iar load took too long"}, verify=False)
-            self.log.put("[MGM] load iar did not complete within time limit")
-            return
-        r = requests.post(report, data={"Success": False, "Done": True, "Message": "Unknown error"}, verify=False)
-        self.log.put("[MGM] load iar unknown error")
-        print "An error occurred loading iar file, we are not aborted or done"
-        
-    def saveIar(self, report, upload, console, inventoryPath, user, password, iarDir):
-        console.read()
-        start = time.time()
-        iarName = "%s.iar" % (user.replace(" ",""))
-        cmd = "save iar %s %s %s %s" % (user, inventoryPath, password, iarName)
-        console.write(cmd)
-        done = False
-        abort = False
-        while not done and not abort:
-            time.sleep(5)
-            for line in console.readLine():
-                #timeout this function after an hour
-                if (time.time() - start) > 60*60:
-                    abort = True
-                    continue
-                if not "[INVENTORY ARCHIVER]" in line:
-                    continue
-                if not "Saved archive" in line:
-                    continue
-                done = True
-                break
-        
-        console.close()
-        if done:
-            #post iar file back to mgm with job number
-            iar = os.path.join(iarDir,iarName)
-            r = requests.post(upload, data={"Success": True}, files={'file': (user, open(iar, 'rb'))}, verify=False)
-            os.remove(iar)
-            self.log.put("[MGM] save iar completed successfully")
-            return
-        if abort:
-            r = requests.post(report, data={"Success": False, "Done": True, "Message": "Timeout.  Iar save took too long"}, verify=False)
-            self.log.put("[MGM] save iar did not complete within the time limit")
-            return
-        r = requests.post(report, data={"Success": False, "Done": True, "Message": "Unknown error"}, verify=False)
-        self.log.put("[MGM] save iar unknown error")
-        print "An error occurred saving iar file, we are not aborted or done"
-    
-    def loadOar(self, ready, report, console, merge, x, y, z):
-        self.log.put("[MGM] starting load oar task")
-        console.read()
-        start = time.time()
-        if merge == "1":
-            cmd = "load oar --merge --force-terrain --force-parcels --displacement <%s,%s,%s> %s" % (x, y, z, ready)
+        #change job state and trigger job
+        self.currentJob = job
+        print "Starting job %s on region [unspecified]" % (job['name'])
+        if job['name'] == "save_oar":
+            self.startSaveOar()
+        elif job['name'] == "load_oar":
+            self.startLoadOar()
+        elif job['name'] == "save_iar":
+            self.startSaveIar()
+        elif job['name'] == "load_iar":
+            self.startLoadIar()
         else:
-            cmd = "load oar --displacement <%s,%s,%s> %s" % (x, y, z, ready)
-        console.write(cmd);
-        done = False
-        abort = False
-        while not done and not abort:
-            time.sleep(5)
-            for line in console.readLine():
-                #timeout this function after an hour
-                if (time.time() - start) > 60*60:
-                    abort = True
-                    continue
-                if not "[ARCHIVER]" in line:
-                    continue
-                if not "Successfully" in line:
-                    continue
-                done = True
-                break
+            print "Error, invalid job type: %s" % job['name']
+        #do not repoll until job is complete
+        
+    def receiveLog(self, line):
+        if(self.processLog):
+            self.processLog(line)
+    
+    def startLoadIar(self):
+        print "[MGM] starting load iar task"
+        self.startTime = time.time()
+        cmd = "load iar %s %s %s %s" % (self.currentJob['user'], self.currentJob['path'], self.currentJob['password'], self.currentJob['ready'])
+        self.currentJob['console'].write(cmd);
+        self.currentJob['console'].close()
+        self.processLog = self.processLoadIar
+        
+    def processLoadIar(self, line):
+        if (time.time() - self.startTime) > 60*60:
+            #timeout, report and schedule next job
+            r = requests.post(self.currentJob['report'], data={"Success": False, "Done": True, "Message": "Timeout.  Iar load took too long"}, verify=False)
+            print "load iar did not complete within time limit"
+            self.processLog = False
+            reactor.callLater(1, self.pollForWork)
+        if not "[INVENTORY ARCHIVER]" in line:
+            return
+        if "Successfully" in line:
+            #job done, report and schedule next job
+            r = requests.post(self.currentJob['report'], data={"Success": True, "Done": True}, verify=False)
+            print "load iar completed successfully"
+            self.processLog = False
+            reactor.callLater(1, self.pollForWork)
                 
-        console.close()
-        if done:
-            # report back to master
-            r = requests.post(report, data={"Success": True, "Done": True}, verify=False)
-            self.log.put("[MGM] load oar completed successfully")
-            return
-        if abort:
-            r = requests.post(report, data={"Success": False, "Done": True, "Message": "Timeout.  Oar load took too long"}, verify=False)
-            self.log.put("[MGM] load oar did not complete within the time limit")
-            return
-        r = requests.post(report, data={"Success": False, "Done": True, "Message": "Unknown error"}, verify=False)
-        self.log.put("[MGM] load oar unknown error")
-        print "An error occurred loading oar file, we are not aborted or done"
+    def startSaveIar(self):
+        print "[MGM] starting save iar task"
+        self.startTime = time.time()
+        iarName = "%s.iar" % (self.currentJob['user'].replace(" ",""))
+        cmd = "save iar %s %s %s %s" % (self.currentJob['user'], self.currentJob['path'], self.currentJob['password'], iarName)
+        self.currentJob['console'].write(cmd);
+        self.currentJob['console'].close()
+        self.processLog = self.processSaveIar
         
-    def saveOar(self, report, upload, console, oarDir, regionName):
-        self.log.put("[MGM] starting save oar task")
-        console.read()
-        start = time.time()
-        oarName = "%s.oar" % regionName
-        cmd = "save oar %s" % oarName
-        console.write(cmd)
-        done = False
-        abort = False
-        while not done and not abort:
-            time.sleep(5)
-            for line in console.readLine():
-                #timeout this function after an hour
-                if (time.time() - start) > 60*60:
-                    abort = True
-                    continue
-                if not "[ARCHIVER]" in line:
-                    continue
-                if not "Finished" in line:
-                    continue
-                done = True
-                break
+    def processSaveIar(self, line):
+        if (time.time() - self.startTime) > 60*60:
+            #timeout, report and schedule next job
+            r = requests.post(self.currentJob['report'], data={"Success": False, "Done": True, "Message": "Timeout.  Iar save took too long"}, verify=False)
+            self.log.put("save iar did not complete within time limit")
+            self.processLog = False
+            reactor.callLater(1, self.pollForWork)
+        if not "[INVENTORY ARCHIVER]" in line:
+            return
+        if "Saved archive" in line:
+            iarName = "%s.iar" % (self.currentJob['user'].replace(" ",""))
+            iar = os.path.join(iarDir,iarName)
+            requests.post(self.currentJob['upload'], data={"Success": True}, files={'file': (user, open(iar, 'rb'))}, verify=False)
+            os.remove(iar)
+            self.log.put("load iar completed successfully")
+            self.processLog = False
+            reactor.callLater(1, self.pollForWork)
+
+    def startLoadOar(self):
+        print "[MGM] starting load oar task"
+        self.startTime = time.time()
+        cmd = "load iar %s %s %s %s" % (job['user'], job['path'], job['password'], job['ready'])
+        if self.currentJob['merge'] == "1":
+            cmd = "load oar --merge --force-terrain --force-parcels --displacement <%s,%s,%s> %s" % (self.currentJob['x'], self.currentJob['y'], self.currentJob['z'], self.currentJob['ready'])
+        else:
+            cmd = "load oar --displacement <%s,%s,%s> %s" % (self.currentJob['x'], self.currentJob['y'], self.currentJob['z'], self.currentJob['ready'])
+        self.currentJob['console'].write(cmd);
+        self.currentJob['console'].close()
+        self.processLog = self.processLoadOar
         
-        console.close()
-        if done:
-            #post oar file back to mgm with job number
-            oar = os.path.join(oarDir,oarName)
-            r = requests.post(upload, data={"Success": True}, files={'file': (regionName, open(oar, 'rb'))}, verify=False)
-            self.log.put("[MGM] save oar completed successfully")
+    def processLoadOar(self,line):
+        if (time.time() - self.startTime) > 60*60:
+            #timeout, report and schedule next job
+            r = requests.post(self.currentJob['report'], data={"Success": False, "Done": True, "Message": "Timeout.  Oar load took too long"}, verify=False)
+            self.log.put("load oar did not complete within time limit")
+            self.processLog = False
+            reactor.callLater(1, self.pollForWork)
+        if not "[ARCHIVER]" in line:
+            return
+        if "Successfully" in line:
+            r = requests.post(self.currentJob['report'], data={"Success": False, "Done": True, "Message": "Unknown error"}, verify=False)
+            print "load oar completed successfully"
+            self.processLog = False
+            reactor.callLater(1, self.pollForWork)
+    
+    def startSaveOar(self):
+        print "[MGM] starting save oar task"
+        self.startTime = time.time()
+        cmd = "save oar mgm.oar"
+        self.currentJob['console'].write(cmd);
+        self.currentJob['console'].close()
+        self.processLog = self.processSaveOar
+        
+    def processSaveOar(self, line):
+        if (time.time() - self.startTime) > 60*60:
+            #timeout, report and schedule next job
+            r = requests.post(self.currentJob['report'], data={"Success": False, "Done": True, "Message": "Timeout.  Oar save took too long"}, verify=False)
+            self.log.put("load oar did not complete within time limit")
+            self.processLog = False
+            reactor.callLater(1, self.pollForWork)
+        if not "[ARCHIVER]" in line:
+            return
+        if "Finished" in line:
+            oar = os.path.join(self.currentJob['location'],"mgm.oar")
+            r = requests.post(self.currentJob['upload'], data={"Success": True}, files={'file': (self.currentJob['region'], open(oar, 'rb'))}, verify=False)
             os.remove(oar)
-            return
-        if abort:
-            r = requests.post(report, data={"Success": False, "Done": True, "Message": "Timeout.  Oar save took too long"}, verify=False)
-            self.log.put("[MGM] save oar did not complete within the time limit")
-            return
-        r = requests.post(report, data={"Success": False, "Message": "Unknown error"}, verify=False)
-        self.log.put("[MGM] save oar unknown error")
-        print "An error occurred saving oar file, we are not aborted or done"
+            print "save oar finished successfully"
+            self.processLog = False
+            reactor.callLater(1, self.pollForWork)
 
 class Region:
     """A wrapper class aroudn a psutil popen instance of a region; handling logging and beckground tasks associated with this region"""
@@ -290,7 +240,9 @@ class Region:
         self.simStatsCounter = 0
         self.simPhysicsCounter = 0
         
-        self.pp = RegionLogger(self.dispatchUrl,self.name)
+        self.jobQueue = Queue()
+        self.worker = RegionWorker(self.jobQueue)
+        self.pp = RegionLogger(self.dispatchUrl,self.name, self.worker.receiveLog)
         self.pid = 0
         
         if os.name != 'nt':
@@ -309,12 +261,6 @@ class Region:
 				shutil.copytree(binDir, self.startDir)
         self.configFile = os.path.join(self.startDir, '%s.cfg' % procName)
         self.exe = os.path.join(self.startDir, 'OpenSim.exe')
-        
-        #set up threaded worker
-        self.jobQueue = Queue()
-        self.logQueue = Queue()
-        self.workerProcess = None
-        self.loggerProcess = None
             
     def isRunning(self):
         return self.pp.isRunning
@@ -425,21 +371,15 @@ class Region:
         cfgFile.close()
     
     def start(self):
+        if self.isRunning():
+            return
         self.writeConfig()
         namedString = self.startString % self.name
         starter = namedString.split(" ")
         self.pid = reactor.spawnProcess(self.pp, starter[0], args=starter,path=self.startDir)
-        self.workerProcess = RegionWorker(self.jobQueue, self.logQueue)
-        self.workerProcess.daemon = True
-        self.workerProcess.start()
     
     def stop(self):
-        self.trackStage = "stopped"
-        self.stopFailCounter = 0
-        self.startFailCounter = 0
-        self.simStatsCounter = 0
-        self.simPhysicsCounter = 0
-        self.logQueue.put("[MGM] %s requested Stop" % self.name)
+        self.pp.transport.signalProcess("KILL")
         
     def stopProcess(self):
         if self.isRunning():
@@ -453,17 +393,17 @@ class Region:
 
     def saveOar(self, reportUrl, uploadUrl):
         try:
-            self.logQueue.put("[MGM] %s requested save oar" % self.name)
+            print "[MGM] %s requested save oar" % self.name
             url = "http://127.0.0.1:" + str(self.console)
             console = RestConsole(url, self.consoleUser, self.consolePassword)
-            self.jobQueue.put({"name": "save_oar", "reportUrl": reportUrl, "uploadUrl": uploadUrl, "console": console, "region":self.name, "location":self.startDir})
+            self.jobQueue.put({"name": "save_oar", "report": reportUrl, "upload": uploadUrl, "console": console, "region":self.name, "location":self.startDir})
         except:
             return False
         return True
         
     def loadOar(self, ready, report, merge, x, y, z):
         try:
-            self.logQueue.put("[MGM] %s requested load oar" % self.name)
+            print "[MGM] %s requested load oar" % self.name
             url = "http://127.0.0.1:" + str(self.console)
             console = RestConsole(url, self.consoleUser, self.consolePassword)
             self.jobQueue.put({"name": "load_oar", "ready": ready, "report": report, "console": console, "merge": merge, "x":x, "y":y, "z":z})
@@ -474,7 +414,7 @@ class Region:
         
     def loadIar(self, ready, reportUrl, invPath, avatar, password):
         try:
-            self.logQueue.put("[MGM] User requested load iar")
+            print "[MGM] User requested load iar"
             url = "http://127.0.0.1:" + str(self.console)
             console = RestConsole(url, self.consoleUser, self.consolePassword)
             self.jobQueue.put({"name": "load_iar", "ready": ready, "report": reportUrl, "console": console, "path": invPath, "user":avatar, "password":password})
@@ -484,7 +424,7 @@ class Region:
         
     def saveIar(self, reportUrl, uploadUrl, invPath, avatar, password):
         try:
-            self.logQueue.put("[MGM] User requested save iar")
+            print "[MGM] User requested save iar"
             url = "http://127.0.0.1:" + str(self.console)
             console = RestConsole(url, self.consoleUser, self.consolePassword)
             self.jobQueue.put({"name": "save_iar", "report": reportUrl, "upload": uploadUrl, "console": console, "path": invPath, "user":avatar, "password":password, "location":self.startDir})

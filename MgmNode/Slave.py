@@ -77,8 +77,6 @@ class Slave(resource.Resource):
                 request.args['y'][0], 
                 request.args['z'][0])
         
-        print urlParts
-        print request.args
         return json.dumps({ "Success": False, "Message": "Error, message not handled"})
     
     def __init__(self, conf):
@@ -161,7 +159,6 @@ class Slave(resource.Resource):
     # FRONT END FUNCTION CALLS
 
     def region(self, action, name):
-        print action
         if action == "add":
             #check if region already present here
             if name in self.registeredRegions:

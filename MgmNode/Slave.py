@@ -38,27 +38,48 @@ class Slave(resource.Resource):
         if len(urlParts) < 2:
             return json.dumps({ "Success": False, "Message": "Invalid Route"})
         if urlParts[1] == "region":
-            #region [add|remove|start|stop]
             if not 'action' in request.args or not 'name' in request.args:
                 return json.dumps({ "Success": False, "Message": "Invalid arguments"})
             return self.region(request.args['action'][0],request.args['name'][0])
-            return json.dumps({ "Success": False, "Message": "Not Implemented"})
         elif urlParts[1] == "loadIar":
-            #loadIar
-            pass
+            if not 'avatarName' in request.args or not 'job' in request.args or not 'inventoryPath' in request.args or not 'avatarPassword' in request.args or not 'name' in request.args:
+                return json.dumps({ "Success": False, "Message": "Invalid arguments"})
+            return self.loadIar(
+                request.args['name'][0],
+                request.args['avatarName'][0],
+                request.args['avatarPassword'][0],
+                request.args['inventoryPath'][0], 
+                request.args['job'][0])
         elif urlParts[1] == "saveIar":
             #saveIar
-            pass
+            if not 'avatarName' in request.args or not 'job' in request.args or not 'inventoryPath' in request.args or not 'avatarPassword' in request.args or not 'name' in request.args:
+                return json.dumps({ "Success": False, "Message": "Invalid arguments"})
+            return self.saveIar(
+                request.args['name'][0],
+                request.args['avatarName'][0],
+                request.args['avatarPassword'][0],
+                request.args['inventoryPath'][0], 
+                request.args['job'][0])
         elif urlParts[1] == "saveOar":
-            #saveOar
-            pass
+            if not 'job' in request.args or not 'name' in request.args:
+                return json.dumps({ "Success": False, "Message": "Invalid arguments"})
+            return self.saveOar(request.args['name'][0],request.args['job'][0])
         elif urlParts[1] == "loadOar":
-            #loadOar
-            pass
+            if not 'job' in request.args or not 'name' in request.args:
+                return json.dumps({ "Success": False, "Message": "Invalid arguments"})
+            if not 'merge' in request.args or not 'x' in request.args or not 'y' in request.args or not 'z' in request.args:
+                return json.dumps({ "Success": False, "Message": "Invalid arguments"})
+            return self.loadOar(
+                request.args['name'][0], 
+                request.args['job'][0], 
+                request.args['merge'][0], 
+                request.args['x'][0], 
+                request.args['y'][0], 
+                request.args['z'][0])
         
         print urlParts
         print request.args
-        return json.dumps({ "Success": False, "Message": "Invalid Route"})
+        return json.dumps({ "Success": False, "Message": "Error, message not handled"})
     
     def __init__(self, conf):
         self.availablePorts = []
@@ -178,11 +199,6 @@ class Slave(resource.Resource):
             return json.dumps({ "Success": False, "Message": "Unsupported Action"})
     
     def loadIar(self, name, avatarName, avatarPassword, inventoryPath, job):
-        #veryify request is coming from the web frontend
-        ip = cherrypy.request.headers["Remote-Addr"]
-        if not ip == self.frontendAddress:
-            print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-            return "Denied, this functionality if restricted to the mgm web app"
         if not name in self.registeredRegions:
             return json.dumps({ "Success": False, "Message": "Region not present"})
         if not self.registeredRegions[name]["proc"].isRunning():
@@ -197,11 +213,6 @@ class Slave(resource.Resource):
         return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
         
     def saveIar(self, name, avatarName, avatarPassword, inventoryPath, job):
-        #veryify request is coming from the web frontend
-        ip = cherrypy.request.headers["Remote-Addr"]
-        if not ip == self.frontendAddress:
-            print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-            return "Denied, this functionality if restricted to the mgm web app"
         if not name in self.registeredRegions:
             return json.dumps({ "Success": False, "Message": "Region not present"})
         if not self.registeredRegions[name]["proc"].isRunning():
@@ -215,12 +226,6 @@ class Slave(resource.Resource):
         return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
     
     def saveOar(self, name, job):
-        #veryify request is coming from the web frontend
-        ip = cherrypy.request.headers["Remote-Addr"]
-        if not ip == self.frontendAddress:
-            print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-            return "Denied, this functionality if restricted to the mgm web app"
-            
         if not name in self.registeredRegions:
             return json.dumps({ "Success": False, "Message": "Region not present"})
         if not self.registeredRegions[name]["proc"].isRunning():
@@ -233,12 +238,6 @@ class Slave(resource.Resource):
         return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
         
     def loadOar(self, name, job, merge, x, y, z):
-        #veryify request is coming from the web frontend
-        ip = cherrypy.request.headers["Remote-Addr"]
-        if not ip == self.frontendAddress:
-            print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-            return "Denied, this functionality if restricted to the mgm web app"
-        
         if not name in self.registeredRegions:
             return json.dumps({ "Success": False, "Message": "Region not present"})
         if not self.registeredRegions[name]["proc"].isRunning():

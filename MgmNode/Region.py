@@ -133,7 +133,7 @@ class RegionWorker:
             r = requests.post(self.currentJob['report'], data={"Success": False, "Done": True, "Message": "Timeout.  Iar load took too long"}, verify=False)
             print "load iar did not complete within time limit"
             self.processLog = False
-            reactor.callLater(1, self.pollForWork)
+            reactor.callLater(10, self.pollForWork)
         if not "[INVENTORY ARCHIVER]" in line:
             return
         if "Successfully" in line:
@@ -141,7 +141,7 @@ class RegionWorker:
             r = requests.post(self.currentJob['report'], data={"Success": True, "Done": True}, verify=False)
             print "load iar completed successfully"
             self.processLog = False
-            reactor.callLater(1, self.pollForWork)
+            reactor.callLater(10, self.pollForWork)
                 
     def startSaveIar(self):
         print "[MGM] starting save iar task"
@@ -158,22 +158,21 @@ class RegionWorker:
             r = requests.post(self.currentJob['report'], data={"Success": False, "Done": True, "Message": "Timeout.  Iar save took too long"}, verify=False)
             self.log.put("save iar did not complete within time limit")
             self.processLog = False
-            reactor.callLater(1, self.pollForWork)
+            reactor.callLater(10, self.pollForWork)
         if not "[INVENTORY ARCHIVER]" in line:
             return
         if "Saved archive" in line:
             iarName = "%s.iar" % (self.currentJob['user'].replace(" ",""))
-            iar = os.path.join(iarDir,iarName)
-            requests.post(self.currentJob['upload'], data={"Success": True}, files={'file': (user, open(iar, 'rb'))}, verify=False)
+            iar = os.path.join(self.currentJob["location"],iarName)
+            requests.post(self.currentJob['upload'], data={"Success": True}, files={'file': (self.currentJob['user'], open(iar, 'rb'))}, verify=False)
             os.remove(iar)
-            self.log.put("load iar completed successfully")
+            print "load iar completed successfully"
             self.processLog = False
-            reactor.callLater(1, self.pollForWork)
+            reactor.callLater(10, self.pollForWork)
 
     def startLoadOar(self):
         print "[MGM] starting load oar task"
         self.startTime = time.time()
-        cmd = "load iar %s %s %s %s" % (job['user'], job['path'], job['password'], job['ready'])
         if self.currentJob['merge'] == "1":
             cmd = "load oar --merge --force-terrain --force-parcels --displacement <%s,%s,%s> %s" % (self.currentJob['x'], self.currentJob['y'], self.currentJob['z'], self.currentJob['ready'])
         else:
@@ -188,14 +187,14 @@ class RegionWorker:
             r = requests.post(self.currentJob['report'], data={"Success": False, "Done": True, "Message": "Timeout.  Oar load took too long"}, verify=False)
             self.log.put("load oar did not complete within time limit")
             self.processLog = False
-            reactor.callLater(1, self.pollForWork)
+            reactor.callLater(10, self.pollForWork)
         if not "[ARCHIVER]" in line:
             return
         if "Successfully" in line:
             r = requests.post(self.currentJob['report'], data={"Success": False, "Done": True, "Message": "Unknown error"}, verify=False)
             print "load oar completed successfully"
             self.processLog = False
-            reactor.callLater(1, self.pollForWork)
+            reactor.callLater(10, self.pollForWork)
     
     def startSaveOar(self):
         print "[MGM] starting save oar task"
@@ -211,7 +210,7 @@ class RegionWorker:
             r = requests.post(self.currentJob['report'], data={"Success": False, "Done": True, "Message": "Timeout.  Oar save took too long"}, verify=False)
             self.log.put("load oar did not complete within time limit")
             self.processLog = False
-            reactor.callLater(1, self.pollForWork)
+            reactor.callLater(10, self.pollForWork)
         if not "[ARCHIVER]" in line:
             return
         if "Finished" in line:
@@ -220,7 +219,7 @@ class RegionWorker:
             os.remove(oar)
             print "save oar finished successfully"
             self.processLog = False
-            reactor.callLater(1, self.pollForWork)
+            reactor.callLater(10, self.pollForWork)
 
 class Region:
     """A wrapper class aroudn a psutil popen instance of a region; handling logging and beckground tasks associated with this region"""

@@ -9,7 +9,7 @@ On centos, all requisite packages at appropriate versions are present in EPEL
 
 ### Required Packages
 
-python-cherrypy python-psutil python-requests
+python-psutil python-requests
 
 ### Installation
 MgmNode is a simple python application.  It requires an installed mgm instance be available on its network, with the ip address of the machine running mgmNode to be listed as a host by mgm.  MgmNode includes an example upstart script, as well as a py2exe script called freeze.py if running on Windows without an installed python runtime is necessary.

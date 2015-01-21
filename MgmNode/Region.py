@@ -12,65 +12,77 @@ from psutil import Popen
 
 from RestConsole import RestConsole
 
+from twisted.internet import reactor, protocol, task
+
 PSUTIL2 = psutil.version_info >= (2, 0)
 
-class RegionLogger( Thread ):
+class RegionLogger( protocol.ProcessProtocol ):
     """A threaded class to capture stdout and stderr, and upload them in batches to MGM"""
 
-    def __init__(self, url, region, stderr, stdout, queue):
-        super(RegionLogger, self).__init__()
-        self.queue = queue
+    def __init__(self, url, region):
+        self. messages = []
         self.regexp = re.compile(r'^{[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}}.*')
         self.url = "http://%s/server/dispatch/logs/%s" % (url,region)
         self.region = region
-        self.stderr = stderr
-        self.stdout = stdout
-        self.shutdown = False
+        self.isRunning = False
         
-    def run(self):
-        self.stdin = threading.Thread(target=self.logToOut, args=(self.stdout,))
-        self.stdin.daemon = True
-        self.stdin.start()
-        self.stdout = threading.Thread(target=self.logToOut, args=(self.stderr,))
-        self.stdout.daemon = True
-        self.stdout.start()
-        
-        try:
-            while not self.shutdown:
-                time.sleep(10)
-                if not self.queue.empty():
-                    messages = []
-                    try:
-                        for i in range(self.queue.qsize()):
-                            line = self.queue.get(False)
-                            if self.regexp.search(line) is not None:
-                                parts = line.split("-", 1)
-                                log = {}
-                                log["timestamp"] = "%s %s" % (time.strftime("%Y-%m-%d"), parts[0].strip())
-                                log["message"] = parts[1].strip()
-                                messages.append(log)
-                            else:
-                                log = {}
-                                log["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                                log["message"] = line
-                                messages.append(log)
-                    except QX.Empty:
-                        pass
+        recurring = task.LoopingCall(self.reportLogs)
+        recurring.start(10)
 
-                    if len(messages) > 0:
-                        req = requests.post(self.url,data={'log':json.dumps(messages)}, verify=False)
-                        if not req.status_code == requests.codes.ok:
-                            print "Error sending %s: %s" % (self.region, req.content)
-        except:
-            #we receive sigint and sigterm during normal operation, exit
-            pass
+    def connectionMade(self):
+        print "Region %s started" % self.region
+        self.isRunning = True
+        
+    def outReceived(self, line):
+        if self.regexp.search(line) is not None:
+            parts = line.split("-", 1)
+            log = {}
+            log["timestamp"] = "%s %s" % (time.strftime("%Y-%m-%d"), parts[0].strip())
+            log["message"] = parts[1].strip()
+            self.messages.append(log)
+        else:
+            log = {}
+            log["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            log["message"] = line
+            self.messages.append(log)
+    
+    def errReceived(self, line):
+        if self.regexp.search(line) is not None:
+            parts = line.split("-", 1)
+            log = {}
+            log["timestamp"] = "%s %s" % (time.strftime("%Y-%m-%d"), parts[0].strip())
+            log["message"] = parts[1].strip()
+            self.messages.append(log)
+        else:
+            log = {}
+            log["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            log["message"] = line
+            self.messages.append(log)
+    
+    def inConnectionLost(self):
+        print "stdin closed on %s" % self.region
+        
+    def outConnectionLost(self):
+        print "stdout closed on %s" % self.region
+        
+    def errConnectionLost(self):
+        print "stderr closed on %s" % self.region
+        
+    def processExited(self, reason):
+        print "region %s exited with reason %s" % (self.region, reason)
+        self.isRunning = False
+        
+    def processEnded(self, reason):
+        print "region %s ended with reason %s" % (self.region, reason)
+        self.isRunning = False
+        
+    def reportLogs(self):
+        if len(self.messages) > 0:
+            req = requests.post(self.url,data={'log':json.dumps(self.messages)}, verify=False)
+            self.messages = []
+            if not req.status_code == requests.codes.ok:
+                print "Error sending %s: %s" % (self.region, req.content)
 	
-    def logToOut(self, pipe):
-        while True:
-            line = pipe.readline()
-            if line.strip() != "":
-                self.queue.put(line.strip())
-            time.sleep(.25)
 
 class RegionWorker( Thread ):
     """a threaded class to handle long running tasks that may output files locally"""
@@ -263,7 +275,6 @@ class RegionWorker( Thread ):
 class Region:
     """A wrapper class aroudn a psutil popen instance of a region; handling logging and beckground tasks associated with this region"""
     def __init__(self, regionPort, consolePort, procName, binDir, regionDir, dispatchUrl, externalAddress):   
-        self.proc = None
         self.stats = {}
         
         self.port = regionPort
@@ -278,6 +289,9 @@ class Region:
         self.stopFailCounter = 0
         self.simStatsCounter = 0
         self.simPhysicsCounter = 0
+        
+        self.pp = RegionLogger(self.dispatchUrl,self.name)
+        self.pid = 0
         
         if os.name != 'nt':
             self.startString = "mono %s" % self.startString
@@ -301,33 +315,9 @@ class Region:
         self.logQueue = Queue()
         self.workerProcess = None
         self.loggerProcess = None
-        
-    def __del__(self):
-        self.terminate()
-    
-    #called on Slave shutdown        
-    def terminate(self):
-        '''Kill process'''
-        if self.proc:
-            try:
-                self.proc.kill()
-            except:
-                pass
-        if self.workerProcess:
-            self.workerProcess.shutdown = True
-        if self.loggerProcess:
-            self.loggerProcess.shutdown = True
             
     def isRunning(self):
-        if not self.proc:
-            return False
-        try:
-            status = self.proc.status() if PSUTIL2 else self.proc.status
-            if status in [psutil.STATUS_RUNNING, psutil.STATUS_SLEEPING, psutil.STATUS_DISK_SLEEP]:
-                return True
-        except psutil.NoSuchProcess:
-            return False
-        return False
+        return self.pp.isRunning
     
     def getJsonStats(self):
         stats = self.stats
@@ -343,11 +333,12 @@ class Region:
         stats["stage"] = self.trackStage
         stats["timestamp"] = time.time()
         if self.isRunning():
-            ctime = self.proc.create_time() if PSUTIL2 else self.proc.create_time
+            ptil = psutil.Process(self.pid.pid)
+            ctime = ptil.create_time() if PSUTIL2 else ptil.create_time
             stats["uptime"] = time.time() - ctime
-            stats["memPercent"] = self.proc.get_memory_percent()
-            stats["memKB"] = self.proc.get_memory_info().rss / 1024
-            stats["cpuPercent"] = self.proc.get_cpu_percent(0.1)
+            stats["memPercent"] = ptil.get_memory_percent()
+            stats["memKB"] = ptil.get_memory_info().rss / 1024
+            stats["cpuPercent"] = ptil.get_cpu_percent(0.1)
             try:
                 r = requests.get("http://127.0.0.1:%d/jsonSimStats" % self.port, timeout=0.5)
                 if r.status_code == requests.codes.ok:
@@ -396,77 +387,51 @@ class Region:
         # logging config file
         cfgFile = open(self.configFile, "w")
         cfgFile.write( """<?xml version="1.0" encoding="utf-8" ?>
-<configuration>
-  <configSections>
-    <section name="log4net" type="log4net.Config.Log4NetConfigurationSectionHandler,log4net" />
-  </configSections>
-  <runtime>
-    <gcConcurrent enabled="true" />
-        <gcServer enabled="true" />
-  </runtime>
-  <appSettings></appSettings>
-  <log4net>
-    <appender name="Console" type="OpenSim.Framework.Console.OpenSimAppender, OpenSim.Framework.Console">
-      <layout type="log4net.Layout.PatternLayout">
-        <conversionPattern value="%date{{HH:mm:ss}} - %message" />
-      </layout>
-    </appender>
-    <appender name="StatsLogFileAppender" type="log4net.Appender.FileAppender">
-      <file value="OpenSimStats.log"/>
-      <appendToFile value="true" />
-      <layout type="log4net.Layout.PatternLayout">
-        <conversionPattern value="%date - %message%newline" />
-      </layout>
-    </appender>
-    <root>
-      <level value="DEBUG" />
-      <appender-ref ref="Console" />
-    </root>
-    <logger name="OpenSim.Region.ScriptEngine.XEngine">
-      <level value="INFO"/>
-    </logger>
-	<logger name="special.StatsLogger">
-      <appender-ref ref="StatsLogFileAppender"/>
-    </logger>
-  </log4net>
-</configuration>
-""")
+            <configuration>
+              <configSections>
+                <section name="log4net" type="log4net.Config.Log4NetConfigurationSectionHandler,log4net" />
+              </configSections>
+              <runtime>
+                <gcConcurrent enabled="true" />
+                    <gcServer enabled="true" />
+              </runtime>
+              <appSettings></appSettings>
+              <log4net>
+                <appender name="Console" type="OpenSim.Framework.Console.OpenSimAppender, OpenSim.Framework.Console">
+                  <layout type="log4net.Layout.PatternLayout">
+                    <conversionPattern value="%date{{HH:mm:ss}} - %message" />
+                  </layout>
+                </appender>
+                <appender name="StatsLogFileAppender" type="log4net.Appender.FileAppender">
+                  <file value="OpenSimStats.log"/>
+                  <appendToFile value="true" />
+                  <layout type="log4net.Layout.PatternLayout">
+                    <conversionPattern value="%date - %message%newline" />
+                  </layout>
+                </appender>
+                <root>
+                  <level value="DEBUG" />
+                  <appender-ref ref="Console" />
+                </root>
+                <logger name="OpenSim.Region.ScriptEngine.XEngine">
+                  <level value="INFO"/>
+                </logger>
+                <logger name="special.StatsLogger">
+                  <appender-ref ref="StatsLogFileAppender"/>
+                </logger>
+              </log4net>
+            </configuration>
+            """)
         cfgFile.close()
     
     def start(self):
-        self.logQueue.put("[MGM] %s user requested to start" % self.name)
-        self.trackStage = "running"
-        self.startFailCounter = 0
-        self.simStatsCounter = 0
-        self.simPhysicsCounter = 0
-        self.stopFailCounter = 0
-        threading.Thread(target=self.startProcess)
-        self.startProcess()
-    
-    def startProcess(self):
-        if self.isRunning():
-            return
-        
-        if self.workerProcess:
-            self.workerProcess.shutdown = True
-        if self.loggerProcess:
-			self.loggerProcess.shutdown = True
-        
         self.writeConfig()
-        
-        self.logQueue.put("[MGM] %s starting" % self.name)
-        
-        print "Region %s Started" % self.name
-        mono_env = os.environ.copy()
-        mono_env["MONO_THREADS_PER_CPU"] = "2000"
         namedString = self.startString % self.name
-        self.proc = Popen(namedString.split(" "), cwd=self.startDir, stdout=PIPE, stderr=PIPE, env=mono_env)
+        starter = namedString.split(" ")
+        self.pid = reactor.spawnProcess(self.pp, starter[0], args=starter,path=self.startDir)
         self.workerProcess = RegionWorker(self.jobQueue, self.logQueue)
         self.workerProcess.daemon = True
         self.workerProcess.start()
-        self.loggerProcess = RegionLogger(self.dispatchUrl, self.name, self.proc.stdout, self.proc.stderr, self.logQueue)
-        self.loggerProcess.daemon = True
-        self.loggerProcess.start()
     
     def stop(self):
         self.trackStage = "stopped"

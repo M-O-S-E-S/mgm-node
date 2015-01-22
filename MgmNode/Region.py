@@ -12,258 +12,218 @@ from psutil import Popen
 
 from RestConsole import RestConsole
 
+from twisted.internet import reactor, protocol, task
+
 PSUTIL2 = psutil.version_info >= (2, 0)
 
-class RegionLogger( Thread ):
-    """A threaded class to capture stdout and stderr, and upload them in batches to MGM"""
+class RegionLogger( protocol.ProcessProtocol ):
+    """A twisted process protocol to capture logging data from the opensim process"""
 
-    def __init__(self, url, region, stderr, stdout, queue):
-        super(RegionLogger, self).__init__()
-        self.queue = queue
+    def __init__(self, url, region, receiveLog):
+        self. messages = []
         self.regexp = re.compile(r'^{[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}}.*')
         self.url = "http://%s/server/dispatch/logs/%s" % (url,region)
         self.region = region
-        self.stderr = stderr
-        self.stdout = stdout
-        self.shutdown = False
+        self.isRunning = False
+        self.sendLog = receiveLog
         
-    def run(self):
-        self.stdin = threading.Thread(target=self.logToOut, args=(self.stdout,))
-        self.stdin.daemon = True
-        self.stdin.start()
-        self.stdout = threading.Thread(target=self.logToOut, args=(self.stderr,))
-        self.stdout.daemon = True
-        self.stdout.start()
-        
-        try:
-            while not self.shutdown:
-                time.sleep(10)
-                if not self.queue.empty():
-                    messages = []
-                    try:
-                        for i in range(self.queue.qsize()):
-                            line = self.queue.get(False)
-                            if self.regexp.search(line) is not None:
-                                parts = line.split("-", 1)
-                                log = {}
-                                log["timestamp"] = "%s %s" % (time.strftime("%Y-%m-%d"), parts[0].strip())
-                                log["message"] = parts[1].strip()
-                                messages.append(log)
-                            else:
-                                log = {}
-                                log["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                                log["message"] = line
-                                messages.append(log)
-                    except QX.Empty:
-                        pass
+        recurring = task.LoopingCall(self.reportLogs)
+        recurring.start(10)
 
-                    if len(messages) > 0:
-                        req = requests.post(self.url,data={'log':json.dumps(messages)}, verify=False)
-                        if not req.status_code == requests.codes.ok:
-                            print "Error sending %s: %s" % (self.region, req.content)
-        except:
-            #we receive sigint and sigterm during normal operation, exit
-            pass
-	
-    def logToOut(self, pipe):
-        while True:
-            line = pipe.readline()
-            if line.strip() != "":
-                self.queue.put(line.strip())
-            time.sleep(.25)
-
-class RegionWorker( Thread ):
-    """a threaded class to handle long running tasks that may output files locally"""
-    
-    def __init__(self, jobQueue, logQueue):
-        super(RegionWorker, self).__init__()
-        self.queue = jobQueue
-        self.log = logQueue
-        self.shutdown = False
-    
-    def run(self):
-        self.log.put("[MGM] region worker process started")
-        try:
-            while not self.shutdown:
-                time.sleep(5)
-                #block and wait for a new job
-                try:
-                    job = self.queue.get(False)
-                except QX.Empty:
-                    continue
-                
-                #operate
-                if job['name'] == "save_oar":
-                    self.saveOar(job["reportUrl"],job["uploadUrl"], job["console"],job["location"],job["region"])
-                elif job['name'] == "load_oar":
-                    self.loadOar(job["ready"],job["report"], job["console"], job["merge"], job["x"], job["y"], job["z"])
-                elif job['name'] == "save_iar":
-                    self.saveIar(job["report"],job["upload"],job["console"], job["path"], job["user"], job["password"], job["location"])
-                elif job['name'] == "load_iar":
-                    self.loadIar(job["ready"],job["report"], job["console"], job["path"], job["user"], job["password"])
-                else:
-                    print "invalid job %s, ignoring" % job['name']
-        except:
-            self.log.put("[MGM] region worker process exiting")
-            #we most likely received a sigint
-            pass
-                
-    def loadIar(self, ready, report, console, inventoryPath, user, password):
-        self.log.put("[MGM] starting load iar task")
-        console.read()
-        start = time.time()
-        cmd = "load iar %s %s %s %s" % (user, inventoryPath, password, ready)
-        console.write(cmd);
-        done = False
-        abort = False
-        while not done and not abort:
-            time.sleep(5)
-            for line in console.readLine():
-                #timeout this function after an hour
-                if (time.time() - start) > 60*60:
-                    abort = True
-                    continue
-                if not "[INVENTORY ARCHIVER]" in line:
-                    continue
-                if not "Loaded archive" in line:
-                    continue
-                done = True
-                break
-                
-        console.close()
-        if done:
-            # report back to master
-            r = requests.post(report, data={"Success": True, "Done": True}, verify=False)
-            self.log.put("[MGM] load iar completed successfully")
-            return
-        if abort:
-            r = requests.post(report, data={"Success": False, "Done": True, "Message": "Timeout.  Iar load took too long"}, verify=False)
-            self.log.put("[MGM] load iar did not complete within time limit")
-            return
-        r = requests.post(report, data={"Success": False, "Done": True, "Message": "Unknown error"}, verify=False)
-        self.log.put("[MGM] load iar unknown error")
-        print "An error occurred loading iar file, we are not aborted or done"
+    def connectionMade(self):
+        print "Region %s started" % self.region
+        self.isRunning = True
         
-    def saveIar(self, report, upload, console, inventoryPath, user, password, iarDir):
-        console.read()
-        start = time.time()
-        iarName = "%s.iar" % (user.replace(" ",""))
-        cmd = "save iar %s %s %s %s" % (user, inventoryPath, password, iarName)
-        console.write(cmd)
-        done = False
-        abort = False
-        while not done and not abort:
-            time.sleep(5)
-            for line in console.readLine():
-                #timeout this function after an hour
-                if (time.time() - start) > 60*60:
-                    abort = True
-                    continue
-                if not "[INVENTORY ARCHIVER]" in line:
-                    continue
-                if not "Saved archive" in line:
-                    continue
-                done = True
-                break
-        
-        console.close()
-        if done:
-            #post iar file back to mgm with job number
-            iar = os.path.join(iarDir,iarName)
-            r = requests.post(upload, data={"Success": True}, files={'file': (user, open(iar, 'rb'))}, verify=False)
-            os.remove(iar)
-            self.log.put("[MGM] save iar completed successfully")
-            return
-        if abort:
-            r = requests.post(report, data={"Success": False, "Done": True, "Message": "Timeout.  Iar save took too long"}, verify=False)
-            self.log.put("[MGM] save iar did not complete within the time limit")
-            return
-        r = requests.post(report, data={"Success": False, "Done": True, "Message": "Unknown error"}, verify=False)
-        self.log.put("[MGM] save iar unknown error")
-        print "An error occurred saving iar file, we are not aborted or done"
-    
-    def loadOar(self, ready, report, console, merge, x, y, z):
-        self.log.put("[MGM] starting load oar task")
-        console.read()
-        start = time.time()
-        if merge == "1":
-            cmd = "load oar --merge --force-terrain --force-parcels --displacement <%s,%s,%s> %s" % (x, y, z, ready)
+    def outReceived(self, line):
+        self.sendLog(line)
+        if self.regexp.search(line) is not None:
+            parts = line.split("-", 1)
+            log = {}
+            log["timestamp"] = "%s %s" % (time.strftime("%Y-%m-%d"), parts[0].strip())
+            log["message"] = parts[1].strip()
+            self.messages.append(log)
         else:
-            cmd = "load oar --displacement <%s,%s,%s> %s" % (x, y, z, ready)
-        console.write(cmd);
-        done = False
-        abort = False
-        while not done and not abort:
-            time.sleep(5)
-            for line in console.readLine():
-                #timeout this function after an hour
-                if (time.time() - start) > 60*60:
-                    abort = True
-                    continue
-                if not "[ARCHIVER]" in line:
-                    continue
-                if not "Successfully" in line:
-                    continue
-                done = True
-                break
+            log = {}
+            log["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            log["message"] = line
+            self.messages.append(log)
+    
+    def errReceived(self, line):
+        if self.regexp.search(line) is not None:
+            parts = line.split("-", 1)
+            log = {}
+            log["timestamp"] = "%s %s" % (time.strftime("%Y-%m-%d"), parts[0].strip())
+            log["message"] = parts[1].strip()
+            self.messages.append(log)
+        else:
+            log = {}
+            log["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            log["message"] = line
+            self.messages.append(log)
+    
+    def inConnectionLost(self):
+        pass
+        
+    def outConnectionLost(self):
+        pass
+        
+    def errConnectionLost(self):
+        pass
+        
+    def processExited(self, reason):
+        self.isRunning = False
+        
+    def processEnded(self, reason):
+        self.isRunning = False
+        
+    def reportLogs(self):
+        if len(self.messages) > 0:
+            req = requests.post(self.url,data={'log':json.dumps(self.messages)}, verify=False)
+            self.messages = []
+            if not req.status_code == requests.codes.ok:
+                print "Error sending %s: %s" % (self.region, req.content)
+	
+
+class RegionWorker:
+    """a companion class to RegionLogger to monitor the application output for specific tasks"""
+    
+    def __init__(self, jobQueue):
+        self.queue = jobQueue
+        self.shutdown = False
+        self.currentJob = False
+        self.processLog = False
+        reactor.callLater(10, self.pollForWork)
+        
+    def pollForWork(self):
+        try:
+            job = self.queue.get(False)
+        except QX.Empty:
+            reactor.callLater(10, self.pollForWork)
+            return
+        #change job state and trigger job
+        self.currentJob = job
+        print "Starting job %s on region [unspecified]" % (job['name'])
+        if job['name'] == "save_oar":
+            self.startSaveOar()
+        elif job['name'] == "load_oar":
+            self.startLoadOar()
+        elif job['name'] == "save_iar":
+            self.startSaveIar()
+        elif job['name'] == "load_iar":
+            self.startLoadIar()
+        else:
+            print "Error, invalid job type: %s" % job['name']
+        #do not repoll until job is complete
+        
+    def receiveLog(self, line):
+        if(self.processLog):
+            self.processLog(line)
+    
+    def startLoadIar(self):
+        print "[MGM] starting load iar task"
+        self.startTime = time.time()
+        cmd = "load iar %s %s %s %s" % (self.currentJob['user'], self.currentJob['path'], self.currentJob['password'], self.currentJob['ready'])
+        self.currentJob['console'].write(cmd);
+        self.currentJob['console'].close()
+        self.processLog = self.processLoadIar
+        
+    def processLoadIar(self, line):
+        if (time.time() - self.startTime) > 60*60:
+            #timeout, report and schedule next job
+            r = requests.post(self.currentJob['report'], data={"Success": False, "Done": True, "Message": "Timeout.  Iar load took too long"}, verify=False)
+            print "load iar did not complete within time limit"
+            self.processLog = False
+            reactor.callLater(10, self.pollForWork)
+        if not "[INVENTORY ARCHIVER]" in line:
+            return
+        if "Successfully" in line:
+            #job done, report and schedule next job
+            r = requests.post(self.currentJob['report'], data={"Success": True, "Done": True}, verify=False)
+            print "load iar completed successfully"
+            self.processLog = False
+            reactor.callLater(10, self.pollForWork)
                 
-        console.close()
-        if done:
-            # report back to master
-            r = requests.post(report, data={"Success": True, "Done": True}, verify=False)
-            self.log.put("[MGM] load oar completed successfully")
-            return
-        if abort:
-            r = requests.post(report, data={"Success": False, "Done": True, "Message": "Timeout.  Oar load took too long"}, verify=False)
-            self.log.put("[MGM] load oar did not complete within the time limit")
-            return
-        r = requests.post(report, data={"Success": False, "Done": True, "Message": "Unknown error"}, verify=False)
-        self.log.put("[MGM] load oar unknown error")
-        print "An error occurred loading oar file, we are not aborted or done"
+    def startSaveIar(self):
+        print "[MGM] starting save iar task"
+        self.startTime = time.time()
+        iarName = "%s.iar" % (self.currentJob['user'].replace(" ",""))
+        cmd = "save iar %s %s %s %s" % (self.currentJob['user'], self.currentJob['path'], self.currentJob['password'], iarName)
+        self.currentJob['console'].write(cmd);
+        self.currentJob['console'].close()
+        self.processLog = self.processSaveIar
         
-    def saveOar(self, report, upload, console, oarDir, regionName):
-        self.log.put("[MGM] starting save oar task")
-        console.read()
-        start = time.time()
-        oarName = "%s.oar" % regionName
-        cmd = "save oar %s" % oarName
-        console.write(cmd)
-        done = False
-        abort = False
-        while not done and not abort:
-            time.sleep(5)
-            for line in console.readLine():
-                #timeout this function after an hour
-                if (time.time() - start) > 60*60:
-                    abort = True
-                    continue
-                if not "[ARCHIVER]" in line:
-                    continue
-                if not "Finished" in line:
-                    continue
-                done = True
-                break
+    def processSaveIar(self, line):
+        if (time.time() - self.startTime) > 60*60:
+            #timeout, report and schedule next job
+            r = requests.post(self.currentJob['report'], data={"Success": False, "Done": True, "Message": "Timeout.  Iar save took too long"}, verify=False)
+            self.log.put("save iar did not complete within time limit")
+            self.processLog = False
+            reactor.callLater(10, self.pollForWork)
+        if not "[INVENTORY ARCHIVER]" in line:
+            return
+        if "Saved archive" in line:
+            iarName = "%s.iar" % (self.currentJob['user'].replace(" ",""))
+            iar = os.path.join(self.currentJob["location"],iarName)
+            requests.post(self.currentJob['upload'], data={"Success": True}, files={'file': (self.currentJob['user'], open(iar, 'rb'))}, verify=False)
+            os.remove(iar)
+            print "load iar completed successfully"
+            self.processLog = False
+            reactor.callLater(10, self.pollForWork)
+
+    def startLoadOar(self):
+        print "[MGM] starting load oar task"
+        self.startTime = time.time()
+        if self.currentJob['merge'] == "1":
+            cmd = "load oar --merge --force-terrain --force-parcels --displacement <%s,%s,%s> %s" % (self.currentJob['x'], self.currentJob['y'], self.currentJob['z'], self.currentJob['ready'])
+        else:
+            cmd = "load oar --displacement <%s,%s,%s> %s" % (self.currentJob['x'], self.currentJob['y'], self.currentJob['z'], self.currentJob['ready'])
+        self.currentJob['console'].write(cmd);
+        self.currentJob['console'].close()
+        self.processLog = self.processLoadOar
         
-        console.close()
-        if done:
-            #post oar file back to mgm with job number
-            oar = os.path.join(oarDir,oarName)
-            r = requests.post(upload, data={"Success": True}, files={'file': (regionName, open(oar, 'rb'))}, verify=False)
-            self.log.put("[MGM] save oar completed successfully")
+    def processLoadOar(self,line):
+        if (time.time() - self.startTime) > 60*60:
+            #timeout, report and schedule next job
+            r = requests.post(self.currentJob['report'], data={"Success": False, "Done": True, "Message": "Timeout.  Oar load took too long"}, verify=False)
+            self.log.put("load oar did not complete within time limit")
+            self.processLog = False
+            reactor.callLater(10, self.pollForWork)
+        if not "[ARCHIVER]" in line:
+            return
+        if "Successfully" in line:
+            r = requests.post(self.currentJob['report'], data={"Success": False, "Done": True, "Message": "Unknown error"}, verify=False)
+            print "load oar completed successfully"
+            self.processLog = False
+            reactor.callLater(10, self.pollForWork)
+    
+    def startSaveOar(self):
+        print "[MGM] starting save oar task"
+        self.startTime = time.time()
+        cmd = "save oar mgm.oar"
+        self.currentJob['console'].write(cmd);
+        self.currentJob['console'].close()
+        self.processLog = self.processSaveOar
+        
+    def processSaveOar(self, line):
+        if (time.time() - self.startTime) > 60*60:
+            #timeout, report and schedule next job
+            r = requests.post(self.currentJob['report'], data={"Success": False, "Done": True, "Message": "Timeout.  Oar save took too long"}, verify=False)
+            self.log.put("load oar did not complete within time limit")
+            self.processLog = False
+            reactor.callLater(10, self.pollForWork)
+        if not "[ARCHIVER]" in line:
+            return
+        if "Finished" in line:
+            oar = os.path.join(self.currentJob['location'],"mgm.oar")
+            r = requests.post(self.currentJob['upload'], data={"Success": True}, files={'file': (self.currentJob['region'], open(oar, 'rb'))}, verify=False)
             os.remove(oar)
-            return
-        if abort:
-            r = requests.post(report, data={"Success": False, "Done": True, "Message": "Timeout.  Oar save took too long"}, verify=False)
-            self.log.put("[MGM] save oar did not complete within the time limit")
-            return
-        r = requests.post(report, data={"Success": False, "Message": "Unknown error"}, verify=False)
-        self.log.put("[MGM] save oar unknown error")
-        print "An error occurred saving oar file, we are not aborted or done"
+            print "save oar finished successfully"
+            self.processLog = False
+            reactor.callLater(10, self.pollForWork)
 
 class Region:
     """A wrapper class aroudn a psutil popen instance of a region; handling logging and beckground tasks associated with this region"""
     def __init__(self, regionPort, consolePort, procName, binDir, regionDir, dispatchUrl, externalAddress):   
-        self.proc = None
         self.stats = {}
         
         self.port = regionPort
@@ -278,6 +238,11 @@ class Region:
         self.stopFailCounter = 0
         self.simStatsCounter = 0
         self.simPhysicsCounter = 0
+        
+        self.jobQueue = Queue()
+        self.worker = RegionWorker(self.jobQueue)
+        self.pp = RegionLogger(self.dispatchUrl,self.name, self.worker.receiveLog)
+        self.pid = 0
         
         if os.name != 'nt':
             self.startString = "mono %s" % self.startString
@@ -295,39 +260,9 @@ class Region:
 				shutil.copytree(binDir, self.startDir)
         self.configFile = os.path.join(self.startDir, '%s.cfg' % procName)
         self.exe = os.path.join(self.startDir, 'OpenSim.exe')
-        
-        #set up threaded worker
-        self.jobQueue = Queue()
-        self.logQueue = Queue()
-        self.workerProcess = None
-        self.loggerProcess = None
-        
-    def __del__(self):
-        self.terminate()
-    
-    #called on Slave shutdown        
-    def terminate(self):
-        '''Kill process'''
-        if self.proc:
-            try:
-                self.proc.kill()
-            except:
-                pass
-        if self.workerProcess:
-            self.workerProcess.shutdown = True
-        if self.loggerProcess:
-            self.loggerProcess.shutdown = True
             
     def isRunning(self):
-        if not self.proc:
-            return False
-        try:
-            status = self.proc.status() if PSUTIL2 else self.proc.status
-            if status in [psutil.STATUS_RUNNING, psutil.STATUS_SLEEPING, psutil.STATUS_DISK_SLEEP]:
-                return True
-        except psutil.NoSuchProcess:
-            return False
-        return False
+        return self.pp.isRunning
     
     def getJsonStats(self):
         stats = self.stats
@@ -343,11 +278,12 @@ class Region:
         stats["stage"] = self.trackStage
         stats["timestamp"] = time.time()
         if self.isRunning():
-            ctime = self.proc.create_time() if PSUTIL2 else self.proc.create_time
+            ptil = psutil.Process(self.pid.pid)
+            ctime = ptil.create_time() if PSUTIL2 else ptil.create_time
             stats["uptime"] = time.time() - ctime
-            stats["memPercent"] = self.proc.get_memory_percent()
-            stats["memKB"] = self.proc.get_memory_info().rss / 1024
-            stats["cpuPercent"] = self.proc.get_cpu_percent(0.1)
+            stats["memPercent"] = ptil.get_memory_percent()
+            stats["memKB"] = ptil.get_memory_info().rss / 1024
+            stats["cpuPercent"] = ptil.get_cpu_percent(0.1)
             try:
                 r = requests.get("http://127.0.0.1:%d/jsonSimStats" % self.port, timeout=0.5)
                 if r.status_code == requests.codes.ok:
@@ -396,85 +332,54 @@ class Region:
         # logging config file
         cfgFile = open(self.configFile, "w")
         cfgFile.write( """<?xml version="1.0" encoding="utf-8" ?>
-<configuration>
-  <configSections>
-    <section name="log4net" type="log4net.Config.Log4NetConfigurationSectionHandler,log4net" />
-  </configSections>
-  <runtime>
-    <gcConcurrent enabled="true" />
-        <gcServer enabled="true" />
-  </runtime>
-  <appSettings></appSettings>
-  <log4net>
-    <appender name="Console" type="OpenSim.Framework.Console.OpenSimAppender, OpenSim.Framework.Console">
-      <layout type="log4net.Layout.PatternLayout">
-        <conversionPattern value="%date{{HH:mm:ss}} - %message" />
-      </layout>
-    </appender>
-    <appender name="StatsLogFileAppender" type="log4net.Appender.FileAppender">
-      <file value="OpenSimStats.log"/>
-      <appendToFile value="true" />
-      <layout type="log4net.Layout.PatternLayout">
-        <conversionPattern value="%date - %message%newline" />
-      </layout>
-    </appender>
-    <root>
-      <level value="DEBUG" />
-      <appender-ref ref="Console" />
-    </root>
-    <logger name="OpenSim.Region.ScriptEngine.XEngine">
-      <level value="INFO"/>
-    </logger>
-	<logger name="special.StatsLogger">
-      <appender-ref ref="StatsLogFileAppender"/>
-    </logger>
-  </log4net>
-</configuration>
-""")
+            <configuration>
+              <configSections>
+                <section name="log4net" type="log4net.Config.Log4NetConfigurationSectionHandler,log4net" />
+              </configSections>
+              <runtime>
+                <gcConcurrent enabled="true" />
+                    <gcServer enabled="true" />
+              </runtime>
+              <appSettings></appSettings>
+              <log4net>
+                <appender name="Console" type="OpenSim.Framework.Console.OpenSimAppender, OpenSim.Framework.Console">
+                  <layout type="log4net.Layout.PatternLayout">
+                    <conversionPattern value="%date{{HH:mm:ss}} - %message" />
+                  </layout>
+                </appender>
+                <appender name="StatsLogFileAppender" type="log4net.Appender.FileAppender">
+                  <file value="OpenSimStats.log"/>
+                  <appendToFile value="true" />
+                  <layout type="log4net.Layout.PatternLayout">
+                    <conversionPattern value="%date - %message%newline" />
+                  </layout>
+                </appender>
+                <root>
+                  <level value="DEBUG" />
+                  <appender-ref ref="Console" />
+                </root>
+                <logger name="OpenSim.Region.ScriptEngine.XEngine">
+                  <level value="INFO"/>
+                </logger>
+                <logger name="special.StatsLogger">
+                  <appender-ref ref="StatsLogFileAppender"/>
+                </logger>
+              </log4net>
+            </configuration>
+            """)
         cfgFile.close()
     
     def start(self):
-        self.logQueue.put("[MGM] %s user requested to start" % self.name)
-        self.trackStage = "running"
-        self.startFailCounter = 0
-        self.simStatsCounter = 0
-        self.simPhysicsCounter = 0
-        self.stopFailCounter = 0
-        threading.Thread(target=self.startProcess)
-        self.startProcess()
-    
-    def startProcess(self):
         if self.isRunning():
             return
-        
-        if self.workerProcess:
-            self.workerProcess.shutdown = True
-        if self.loggerProcess:
-			self.loggerProcess.shutdown = True
-        
         self.writeConfig()
-        
-        self.logQueue.put("[MGM] %s starting" % self.name)
-        
-        print "Region %s Started" % self.name
-        mono_env = os.environ.copy()
-        mono_env["MONO_THREADS_PER_CPU"] = "2000"
         namedString = self.startString % self.name
-        self.proc = Popen(namedString.split(" "), cwd=self.startDir, stdout=PIPE, stderr=PIPE, env=mono_env)
-        self.workerProcess = RegionWorker(self.jobQueue, self.logQueue)
-        self.workerProcess.daemon = True
-        self.workerProcess.start()
-        self.loggerProcess = RegionLogger(self.dispatchUrl, self.name, self.proc.stdout, self.proc.stderr, self.logQueue)
-        self.loggerProcess.daemon = True
-        self.loggerProcess.start()
+        starter = namedString.split(" ")
+        self.pid = reactor.spawnProcess(self.pp, starter[0], args=starter,path=self.startDir)
     
     def stop(self):
-        self.trackStage = "stopped"
-        self.stopFailCounter = 0
-        self.startFailCounter = 0
-        self.simStatsCounter = 0
-        self.simPhysicsCounter = 0
-        self.logQueue.put("[MGM] %s requested Stop" % self.name)
+        print "%s signalled kill" % self.name
+        self.pp.transport.signalProcess("KILL")
         
     def stopProcess(self):
         if self.isRunning():
@@ -488,17 +393,17 @@ class Region:
 
     def saveOar(self, reportUrl, uploadUrl):
         try:
-            self.logQueue.put("[MGM] %s requested save oar" % self.name)
+            print "[MGM] %s requested save oar" % self.name
             url = "http://127.0.0.1:" + str(self.console)
             console = RestConsole(url, self.consoleUser, self.consolePassword)
-            self.jobQueue.put({"name": "save_oar", "reportUrl": reportUrl, "uploadUrl": uploadUrl, "console": console, "region":self.name, "location":self.startDir})
+            self.jobQueue.put({"name": "save_oar", "report": reportUrl, "upload": uploadUrl, "console": console, "region":self.name, "location":self.startDir})
         except:
             return False
         return True
         
     def loadOar(self, ready, report, merge, x, y, z):
         try:
-            self.logQueue.put("[MGM] %s requested load oar" % self.name)
+            print "[MGM] %s requested load oar" % self.name
             url = "http://127.0.0.1:" + str(self.console)
             console = RestConsole(url, self.consoleUser, self.consolePassword)
             self.jobQueue.put({"name": "load_oar", "ready": ready, "report": report, "console": console, "merge": merge, "x":x, "y":y, "z":z})
@@ -509,7 +414,7 @@ class Region:
         
     def loadIar(self, ready, reportUrl, invPath, avatar, password):
         try:
-            self.logQueue.put("[MGM] User requested load iar")
+            print "[MGM] User requested load iar"
             url = "http://127.0.0.1:" + str(self.console)
             console = RestConsole(url, self.consoleUser, self.consolePassword)
             self.jobQueue.put({"name": "load_iar", "ready": ready, "report": reportUrl, "console": console, "path": invPath, "user":avatar, "password":password})
@@ -519,7 +424,7 @@ class Region:
         
     def saveIar(self, reportUrl, uploadUrl, invPath, avatar, password):
         try:
-            self.logQueue.put("[MGM] User requested save iar")
+            print "[MGM] User requested save iar"
             url = "http://127.0.0.1:" + str(self.console)
             console = RestConsole(url, self.consoleUser, self.consolePassword)
             self.jobQueue.put({"name": "save_iar", "report": reportUrl, "upload": uploadUrl, "console": console, "path": invPath, "user":avatar, "password":password, "location":self.startDir})

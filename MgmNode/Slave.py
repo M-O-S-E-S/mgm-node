@@ -7,17 +7,77 @@ Created on Jan 30, 2013
 import cherrypy, os
 
 from Region import Region
-import threading
 import time, uuid, requests, logging, logging.handlers, json
 from os import listdir
 from os.path import isfile, join
 from Monitor import Monitor as MonitorWrapper
-from cherrypy.process.plugins import Monitor
-import cherrypy
 
 import xml.etree.ElementTree as ET
 
-class Slave:
+from twisted.web import server, resource
+from twisted.internet import reactor, task
+
+class Slave(resource.Resource):
+    isLeaf = True
+    def getChild(self, name, request):
+        if name == '':
+            return self
+        return Resource.getChild(self, name, request)
+
+    def render_GET(self, request):
+        return "<html><body><h1>MOSES Grid Manager Node: %s</h1></body></html>" % self.host
+
+    #receive commands from the frontend
+    #TODO, switch arguments to url parameters instead of posted action argument
+    def render_POST(self, request):
+        #perform ip verification
+        if not request.getClientIP() == self.frontendAddress:
+            print "INFO: Attempted region control from ip %s instead of web frontent" % request.getClientIP()
+            return "Denied, this functionality if restricted to the mgm web app"
+        urlParts = request.uri.split("/")
+        if len(urlParts) < 2:
+            return json.dumps({ "Success": False, "Message": "Invalid Route"})
+        if urlParts[1] == "region":
+            if not 'action' in request.args or not 'name' in request.args:
+                return json.dumps({ "Success": False, "Message": "Invalid arguments"})
+            return self.region(request.args['action'][0],request.args['name'][0])
+        elif urlParts[1] == "loadIar":
+            if not 'avatarName' in request.args or not 'job' in request.args or not 'inventoryPath' in request.args or not 'avatarPassword' in request.args or not 'name' in request.args:
+                return json.dumps({ "Success": False, "Message": "Invalid arguments"})
+            return self.loadIar(
+                request.args['name'][0],
+                request.args['avatarName'][0],
+                request.args['avatarPassword'][0],
+                request.args['inventoryPath'][0], 
+                request.args['job'][0])
+        elif urlParts[1] == "saveIar":
+            #saveIar
+            if not 'avatarName' in request.args or not 'job' in request.args or not 'inventoryPath' in request.args or not 'avatarPassword' in request.args or not 'name' in request.args:
+                return json.dumps({ "Success": False, "Message": "Invalid arguments"})
+            return self.saveIar(
+                request.args['name'][0],
+                request.args['avatarName'][0],
+                request.args['avatarPassword'][0],
+                request.args['inventoryPath'][0], 
+                request.args['job'][0])
+        elif urlParts[1] == "saveOar":
+            if not 'job' in request.args or not 'name' in request.args:
+                return json.dumps({ "Success": False, "Message": "Invalid arguments"})
+            return self.saveOar(request.args['name'][0],request.args['job'][0])
+        elif urlParts[1] == "loadOar":
+            if not 'job' in request.args or not 'name' in request.args:
+                return json.dumps({ "Success": False, "Message": "Invalid arguments"})
+            if not 'merge' in request.args or not 'x' in request.args or not 'y' in request.args or not 'z' in request.args:
+                return json.dumps({ "Success": False, "Message": "Invalid arguments"})
+            return self.loadOar(
+                request.args['name'][0], 
+                request.args['job'][0], 
+                request.args['merge'][0], 
+                request.args['x'][0], 
+                request.args['y'][0], 
+                request.args['z'][0])
+        
+        return json.dumps({ "Success": False, "Message": "Error, message not handled"})
     
     def __init__(self, conf):
         self.availablePorts = []
@@ -36,28 +96,17 @@ class Slave:
         
         #we can't start up without our master config
         configLoaded = False
-        while not configLoaded:
-            try:
-                configLoaded = self.loadRemoteConfig()
-            except Exception, e:
-                print "Error contacting MGM: %s" % e
-                time.sleep(30)
-    
+        #while not configLoaded:
+        #    try:
+        configLoaded = self.loadRemoteConfig()
+        #    except Exception, e:
+        #        print "Error contacting MGM: %s" % e
+        #        time.sleep(30)
+        
         self.monitor = MonitorWrapper()
         
-        Monitor(cherrypy.engine, self.updateStats, frequency=statsInterval).subscribe()
-        cherrypy.engine.subscribe('stop',self.engineExit)
-    
-        print "node started"
-    
-    def engineExit(self):
-        for name in self.registeredRegions:
-            self.registeredRegions[name]["proc"].terminate()
-    
-    def __del__(self):
-        self.procs = None
-        self.monTimer.cancel()
-        print "node stopping"
+        recurring = task.LoopingCall(self.updateStats)
+        recurring.start(statsInterval)
     
     def loadRemoteConfig(self):
         #load additional config from master service
@@ -107,21 +156,9 @@ class Slave:
         else:
             print "%s - Upload Status: %s" % (time.strftime("%Y-%m-%d %H:%M:%S"), r.content)
 
-    @cherrypy.expose
-    def index(self):
-        return "<html><body><h1>MOSES Grid Manager Node: %s</h1></body></html>" % self.host
-    
     # FRONT END FUNCTION CALLS
 
-    @cherrypy.expose
-    def region(self, name, action):
-        #veryify request is coming from the web frontend
-        ip = cherrypy.request.headers["Remote-Addr"]
-        if not ip == self.frontendAddress:
-            print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-            return "Denied, this functionality if restricted to the mgm web app"
-
-        #perform the action
+    def region(self, action, name):
         if action == "add":
             #check if region already present here
             if name in self.registeredRegions:
@@ -158,13 +195,7 @@ class Slave:
         else:
             return json.dumps({ "Success": False, "Message": "Unsupported Action"})
     
-    @cherrypy.expose
     def loadIar(self, name, avatarName, avatarPassword, inventoryPath, job):
-        #veryify request is coming from the web frontend
-        ip = cherrypy.request.headers["Remote-Addr"]
-        if not ip == self.frontendAddress:
-            print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-            return "Denied, this functionality if restricted to the mgm web app"
         if not name in self.registeredRegions:
             return json.dumps({ "Success": False, "Message": "Region not present"})
         if not self.registeredRegions[name]["proc"].isRunning():
@@ -178,13 +209,7 @@ class Slave:
             return json.dumps({ "Success": True})
         return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
         
-    @cherrypy.expose
     def saveIar(self, name, avatarName, avatarPassword, inventoryPath, job):
-        #veryify request is coming from the web frontend
-        ip = cherrypy.request.headers["Remote-Addr"]
-        if not ip == self.frontendAddress:
-            print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-            return "Denied, this functionality if restricted to the mgm web app"
         if not name in self.registeredRegions:
             return json.dumps({ "Success": False, "Message": "Region not present"})
         if not self.registeredRegions[name]["proc"].isRunning():
@@ -197,14 +222,7 @@ class Slave:
             return json.dumps({ "Success": True})
         return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
     
-    @cherrypy.expose
     def saveOar(self, name, job):
-        #veryify request is coming from the web frontend
-        ip = cherrypy.request.headers["Remote-Addr"]
-        if not ip == self.frontendAddress:
-            print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-            return "Denied, this functionality if restricted to the mgm web app"
-            
         if not name in self.registeredRegions:
             return json.dumps({ "Success": False, "Message": "Region not present"})
         if not self.registeredRegions[name]["proc"].isRunning():
@@ -216,14 +234,7 @@ class Slave:
             return json.dumps({ "Success": True})
         return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
         
-    @cherrypy.expose
     def loadOar(self, name, job, merge, x, y, z):
-        #veryify request is coming from the web frontend
-        ip = cherrypy.request.headers["Remote-Addr"]
-        if not ip == self.frontendAddress:
-            print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-            return "Denied, this functionality if restricted to the mgm web app"
-        
         if not name in self.registeredRegions:
             return json.dumps({ "Success": False, "Message": "Region not present"})
         if not self.registeredRegions[name]["proc"].isRunning():

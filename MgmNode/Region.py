@@ -375,7 +375,7 @@ class Region:
         self.writeConfig()
         namedString = self.startString % self.name
         starter = namedString.split(" ")
-        self.pid = reactor.spawnProcess(self.pp, starter[0], args=starter,path=self.startDir)
+        self.pid = reactor.spawnProcess(self.pp, starter[0], args=starter,path=self.startDir,env=None)
     
     def stop(self):
         print "%s signalled kill" % self.name

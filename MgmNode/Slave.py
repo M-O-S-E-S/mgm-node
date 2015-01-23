@@ -4,7 +4,7 @@ Created on Jan 30, 2013
 @author: mheilman
 '''
 
-import cherrypy, os
+import os
 
 from Region import Region
 import time, uuid, requests, logging, logging.handlers, json
@@ -96,12 +96,7 @@ class Slave(resource.Resource):
         
         #we can't start up without our master config
         configLoaded = False
-        #while not configLoaded:
-        #    try:
         configLoaded = self.loadRemoteConfig()
-        #    except Exception, e:
-        #        print "Error contacting MGM: %s" % e
-        #        time.sleep(30)
         
         self.monitor = MonitorWrapper()
         

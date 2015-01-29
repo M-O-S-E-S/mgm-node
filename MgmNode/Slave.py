@@ -96,7 +96,12 @@ class Slave(resource.Resource):
         
         #we can't start up without our master config
         configLoaded = False
-        configLoaded = self.loadRemoteConfig()
+        while not configLoaded:
+            try:
+                configLoaded = self.loadRemoteConfig()
+            except Exception, e:
+                print e
+                time.sleep(10)
         
         self.monitor = MonitorWrapper()
         

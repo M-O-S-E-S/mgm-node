@@ -7,15 +7,18 @@ Created on Jan 30, 2013
 import os
 
 from Region import Region
-import time, uuid, requests, logging, logging.handlers, json
+import time, uuid, logging, logging.handlers, json
 from os import listdir
 from os.path import isfile, join
 from Monitor import Monitor as MonitorWrapper
+from urllib import urlencode
 
 import xml.etree.ElementTree as ET
 
 from twisted.web import server, resource
 from twisted.internet import reactor, task
+from twisted.internet import reactor
+import treq
 
 class Slave(resource.Resource):
     isLeaf = True
@@ -83,7 +86,7 @@ class Slave(resource.Resource):
         self.availablePorts = []
         self.registeredRegions = {}
         
-        statsInterval = conf['interval']
+        self.statsInterval = conf['interval']
         self.nodePort = conf['port']
         self.key = uuid.uuid4()
         self.host = conf['host']
@@ -95,41 +98,40 @@ class Slave(resource.Resource):
             self.availablePorts.append({"port":r,"console":c})
         
         #we can't start up without our master config
-        configLoaded = False
-        while not configLoaded:
-            try:
-                configLoaded = self.loadRemoteConfig()
-            except Exception, e:
-                print e
-                time.sleep(10)
-        
-        self.monitor = MonitorWrapper()
-        
-        recurring = task.LoopingCall(self.updateStats)
-        recurring.start(statsInterval)
+        self.loadRemoteConfig()
     
     def loadRemoteConfig(self):
-        #load additional config from master service
         url = "http://%s/server/dispatch/node" % (self.frontendAddress)
-        r = requests.post(url, data={'host':self.host, 'port':self.nodePort, 'key':self.key, 'slots': len(self.availablePorts)}, verify=False)
-        if not r.status_code == requests.codes.ok:
-            raise Exception("Error contacting MGM at %s" % url)
+        data={'host':self.host, 'port':self.nodePort, 'key':self.key, 'slots': len(self.availablePorts)}
         
-        result = json.loads(r.content)
+        #internal receive config callback
+        def receivedConfig(response):
+            result = json.loads(response);
+            if not result["Success"]:
+                print "Error loading config: %s" % result["Message"]
+                reactor.callLater(10.0, self.loadRemoteConfig)
+                return
+            if len(result['Regions']) > len(self.availablePorts):
+                raise Exception("Error: too many regions for configured ports")
+            for region in result['Regions']:
+                port = self.availablePorts.pop(0)
+                self.registeredRegions[region['name']] = {
+                    "proc": Region(port["port"],port["console"], region['name'], self.binDir, self.regionDir, self.frontendAddress, self.publicAddress),
+                    "port": port
+                }
+            self.monitor = MonitorWrapper()
         
-        if not result["Success"]:
-            raise Exception("Error loading config: %s" % result["Message"])
-            
-        if len(result['Regions']) > len(self.availablePorts):
-            raise Exception("Error: too many regions for configured ports")
-                
-        for region in result['Regions']:
-            port = self.availablePorts.pop(0)
-            self.registeredRegions[region['name']] = {
-                "proc": Region(port["port"],port["console"], region['name'], self.binDir, self.regionDir, self.frontendAddress, self.publicAddress),
-                "port": port
-            }
-        return True
+            recurring = task.LoopingCall(self.updateStats)
+            recurring.start(self.statsInterval)
+        
+        #internal error callback
+        def configError(reason):
+            print "Error loading config from MGM:", reason.getErrorMessage()
+            reactor.callLater(10.0, self.loadRemoteConfig)
+        
+        d = treq.post(url, urlencode(data),headers={'Content-Type': ['application/x-www-form-urlencoded']})
+        d.addCallback(treq.collect,receivedConfig)
+        d.addErrback(configError)
         
     def updateStats(self):
         self.monitor.updateStatistics()
@@ -138,23 +140,24 @@ class Slave(resource.Resource):
         stats['processes'] = []
         
         for name,region in self.registeredRegions.iteritems():
-            region["proc"].updateProcStats()
             p = {}
             p['name'] = name
             p['running'] = str(region["proc"].isRunning())
             p['stats'] = region["proc"].stats
             stats['processes'].append(p)
         
+        def uploadSuccessful(content):
+            print "%s - Upload Status: %s" % (time.strftime("%Y-%m-%d %H:%M:%S"), content)
+            
+        def uploadFailed(reason):
+            print "Error uploading stats to MGM:", reason.getErrorMessage()
+        
         url = "http://%s/server/dispatch/stats/%s" % (self.frontendAddress, self.host)
-        try:
-            r = requests.post(url, data={"json": json.dumps(stats)}, verify=False)
-        except requests.ConnectionError:
-            print "error connecting to master"
-            return
-        if not r.status_code == requests.codes.ok:
-            print "error uploading stats to master"
-        else:
-            print "%s - Upload Status: %s" % (time.strftime("%Y-%m-%d %H:%M:%S"), r.content)
+        data={"json": json.dumps(stats)}
+        d = treq.post(url, urlencode(data), headers={'Content-Type':['application/x-www-form-urlencoded']})
+        d.addCallback(treq.collect,uploadSuccessful)
+        d.addErrback(uploadFailed)
+
 
     # FRONT END FUNCTION CALLS
 

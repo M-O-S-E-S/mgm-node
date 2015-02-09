@@ -151,7 +151,7 @@ class RegionWorker:
         if "Successfully" in line:
             #job done, report and schedule next job
             data = {"Success": True, "Done": True}
-            treq.post(self.currentJob['report'].encode('ascii'), urlencode(data), headers={'Content-Type':'application/x-www-form-urlencoded'}).addErrback(self.errorDB)
+            treq.post(self.currentJob['report'].encode('ascii'), urlencode(data), headers={'Content-Type':'application/x-www-form-urlencoded'}).addErrback(self.errorCB)
             print "load iar completed successfully"
             self.processLog = False
             reactor.callLater(10, self.pollForWork)

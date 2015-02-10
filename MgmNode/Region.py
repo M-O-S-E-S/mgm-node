@@ -3,35 +3,26 @@ Created on Feb 1, 2013
 
 @author: mheilman
 '''
-import os, psutil, json, Queue as QX, re, shutil, time
-from multiprocessing import Process, Queue
-from threading import Thread
-from subprocess import PIPE
+import os, psutil, json, re, shutil, time
 from urllib import urlencode
-
-from psutil import Popen
 
 from RestConsole import RestConsole
 
 from twisted.internet import reactor, protocol, task, defer
-from twisted.internet.protocol import Protocol
 import treq
-
-import random
-import StringIO
 
 PSUTIL2 = psutil.version_info >= (2, 0)
 
 class RegionLogger( protocol.ProcessProtocol ):
     """A twisted process protocol to capture logging data from the opensim process"""
 
-    def __init__(self, url, region, receiveLog):
+    def __init__(self, url, region, worker):
         self. messages = []
         self.regexp = re.compile(r'^{[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}}.*')
         self.url = "http://%s/server/dispatch/logs/%s" % (url,region)
         self.region = region
         self.isRunning = False
-        self.sendLog = receiveLog
+        self.worker = worker
         
         recurring = task.LoopingCall(self.reportLogs)
         recurring.start(10)
@@ -41,7 +32,7 @@ class RegionLogger( protocol.ProcessProtocol ):
         self.isRunning = True
         
     def outReceived(self, line):
-        self.sendLog(line)
+        self.worker.receiveLog(line)
         if self.regexp.search(line) is not None:
             parts = line.split("-", 1)
             log = {}
@@ -95,22 +86,32 @@ class RegionLogger( protocol.ProcessProtocol ):
 class RegionWorker:
     """a companion class to RegionLogger to monitor the application output for specific tasks"""
     
-    def __init__(self, jobQueue):
-        self.queue = jobQueue
-        self.shutdown = False
+    def __init__(self, region):
+        self.queue = []
         self.currentJob = False
         self.processLog = False
+        self.region = region
         reactor.callLater(10, self.pollForWork)
+    
+    def addJob(self, job):
+        self.queue.insert(0,job)
+    
+    def abort(self):
+        """halt and abandon processing.  Userd when the region this is monitoring is reset"""
+        self.currentJob = False
+        self.processLog = False
+        self.queue = []
         
     def pollForWork(self):
-        try:
-            job = self.queue.get(False)
-        except QX.Empty:
+        if len(self.queue) == 0:
             reactor.callLater(10, self.pollForWork)
             return
+        
+        job = self.queue.pop()
+            
         #change job state and trigger job
         self.currentJob = job
-        print "Starting job %s on region [unspecified]" % (job['name'])
+        print "Starting job %s on region %s" % (job['name'], self.region)
         if job['name'] == "save_oar":
             self.startSaveOar()
         elif job['name'] == "load_oar":
@@ -120,18 +121,18 @@ class RegionWorker:
         elif job['name'] == "load_iar":
             self.startLoadIar()
         else:
-            print "Error, invalid job type: %s" % job['name']
+            print "Error, invalid job type: %s on region %s" % (job['name'],self.region)
         #do not repoll until job is complete
     
     def errorCB(self, reason):
-         print "Error in worker thread: %s" % reason.getErrorMessage()
+         print "Error in worker thread: %s for region %s" % (reason.getErrorMessage(), self.region)
     
     def receiveLog(self, line):
         if(self.processLog):
             self.processLog(line)
     
     def startLoadIar(self):
-        print "[MGM] starting load iar task"
+        print "[MGM] starting load iar task for region %s" % self.region
         self.startTime = time.time()
         cmd = "load iar %s %s %s %s" % (self.currentJob['user'], self.currentJob['path'], self.currentJob['password'], self.currentJob['ready'])
         self.currentJob['console'].write(cmd);
@@ -143,7 +144,7 @@ class RegionWorker:
             #timeout, report and schedule next job
             data = {"Success": False, "Done": True, "Message": "Timeout.  Iar load took too long"}
             treq.post(self.currentJob['report'].encode('ascii'), urlencode(data),headers={'Content-Type':'application/x-www-form-urlencoded'}).addErrback(self.errorCB)
-            print "load iar did not complete within time limit"
+            print "load iar did not complete within time limit on region %s" % self.region
             self.processLog = False
             reactor.callLater(10, self.pollForWork)
         if not "[INVENTORY ARCHIVER]" in line:
@@ -152,12 +153,12 @@ class RegionWorker:
             #job done, report and schedule next job
             data = {"Success": True, "Done": True}
             treq.post(self.currentJob['report'].encode('ascii'), urlencode(data), headers={'Content-Type':'application/x-www-form-urlencoded'}).addErrback(self.errorCB)
-            print "load iar completed successfully"
+            print "load iar completed successfully on region %s" % self.region
             self.processLog = False
             reactor.callLater(10, self.pollForWork)
                 
     def startSaveIar(self):
-        print "[MGM] starting save iar task"
+        print "[MGM] starting save iar task for region %s" % self.region
         self.startTime = time.time()
         iarName = "%s.iar" % (self.currentJob['user'].replace(" ",""))
         cmd = "save iar %s %s %s %s" % (self.currentJob['user'], self.currentJob['path'], self.currentJob['password'], iarName)
@@ -170,7 +171,7 @@ class RegionWorker:
             #timeout, report and schedule next job
             data = {"Success": False, "Done": True, "Message": "Timeout.  Iar save took too long"}
             treq.post(self.currentJob['report'].encode('ascii'), urlencode(data), headers={'Content-Type':'application/x-www-form-urlencoded'}).addErrback(self.errorCB)
-            self.log.put("save iar did not complete within time limit")
+            print "save iar did not complete within time limit on region %s" % self.region
             self.processLog = False
             reactor.callLater(10, self.pollForWork)
         if not "[INVENTORY ARCHIVER]" in line:
@@ -185,14 +186,13 @@ class RegionWorker:
             def removeWhenDone(result):
                 os.remove(iar)
             d.addCallback(removeWhenDone)
-        
-            print "save oar finished successfully"
-            print "save iar completed successfully"
+
+            print "save iar completed successfully for region %s" % self.region
             self.processLog = False
             reactor.callLater(10, self.pollForWork)
 
     def startLoadOar(self):
-        print "[MGM] starting load oar task"
+        print "[MGM] starting load oar task for region %s" % self.region
         self.startTime = time.time()
         if self.currentJob['merge'] == "1":
             cmd = "load oar --merge --force-terrain --force-parcels --displacement <%s,%s,%s> %s" % (self.currentJob['x'], self.currentJob['y'], self.currentJob['z'], self.currentJob['ready'])
@@ -207,7 +207,7 @@ class RegionWorker:
             #timeout, report and schedule next job
             data = {"Success": False, "Done": True, "Message": "Timeout.  Oar load took too long"}
             treq.post(self.currentJob['report'].encode('ascii'), urlencode(data),headers={'Content-Type':'application/x-www-form-urlencoded'}).addErrback(self.errorCB)
-            self.log.put("load oar did not complete within time limit")
+            print "load oar did not complete within time limit for region %s" % self.region
             self.processLog = False
             reactor.callLater(10, self.pollForWork)
         if not "[ARCHIVER]" in line:
@@ -215,12 +215,12 @@ class RegionWorker:
         if "Successfully" in line:
             data = {"Success": False, "Done": True, "Message": "Unknown error"}
             treq.post(self.currentJob['report'].encode('ascii'), urlencode(data), headers={'Content-Type':'application/x-www-form-urlencoded'}).addErrback(self.errorCB)
-            print "load oar completed successfully"
+            print "load oar completed successfully for region %s" % self.region
             self.processLog = False
             reactor.callLater(10, self.pollForWork)
     
     def startSaveOar(self):
-        print "[MGM] starting save oar task"
+        print "[MGM] starting save oar task for region %s" % self.region
         self.startTime = time.time()
         cmd = "save oar mgm.oar"
         self.currentJob['console'].write(cmd);
@@ -232,7 +232,7 @@ class RegionWorker:
             #timeout, report and schedule next job
             data = {"Success": False, "Done": True, "Message": "Timeout.  Oar save took too long"}
             treq.post(self.currentJob['report'].encode('ascii'), urlencode(data), headers={'Content-Type':'application/x-www-form-urlencoded'}).addErrback(self.errorCB)
-            self.log.put("load oar did not complete within time limit")
+            print "load oar did not complete within time limit for region %s" % self.region
             self.processLog = False
             reactor.callLater(10, self.pollForWork)
         if not "[ARCHIVER]" in line:
@@ -247,7 +247,7 @@ class RegionWorker:
                 os.remove(oar)
             d.addCallback(removeWhenDone)
         
-            print "save oar finished successfully"
+            print "save oar finished successfully for region %s" % self.region
             self.processLog = False
             reactor.callLater(10, self.pollForWork)
 
@@ -268,9 +268,8 @@ class Region:
         self.simStatsCounter = 0
         self.simPhysicsCounter = 0
         
-        self.jobQueue = Queue()
-        self.worker = RegionWorker(self.jobQueue)
-        self.pp = RegionLogger(self.dispatchUrl,self.name, self.worker.receiveLog)
+        self.worker = RegionWorker(self.name)
+        self.pp = RegionLogger(self.dispatchUrl,self.name, self.worker)
         self.pid = 0
         
         if os.name != 'nt':
@@ -433,7 +432,6 @@ class Region:
             namedString = self.startString % self.name
             starter = namedString.split(" ")
             self.pid = reactor.spawnProcess(self.pp, starter[0], args=starter,path=self.startDir,env=None)
-            self.updateProcStats()
             reactor.callLater(10, self.updateProcStats)
             
         dl.addCallback(execute)
@@ -442,32 +440,18 @@ class Region:
         print "%s signalled kill" % self.name
         self.pp.transport.signalProcess("KILL")
         
-    def stopProcess(self):
-        if self.isRunning():
-            self.logQueue.put("[MGM] %s Terminating" % self.name)
-            self.jobQueue.shutdown = True
-            try:
-                self.proc.kill()
-            except psutil.NoSuchProcess:
-                pass
-            self.logQueue.shutdown = True
-
     def saveOar(self, reportUrl, uploadUrl):
-        try:
-            print "[MGM] %s requested save oar" % self.name
-            url = "http://127.0.0.1:" + str(self.console)
-            console = RestConsole(url, self.consoleUser, self.consolePassword)
-            self.jobQueue.put({"name": "save_oar", "report": reportUrl, "upload": uploadUrl, "console": console, "region":self.name, "location":self.startDir})
-        except:
-            return False
-        return True
+        print "[MGM] %s requested save oar" % self.name
+        url = "http://127.0.0.1:" + str(self.console)
+        console = RestConsole(url, self.consoleUser, self.consolePassword)
+        self.worker.addJob({"name": "save_oar", "report": reportUrl, "upload": uploadUrl, "console": console, "region":self.name, "location":self.startDir})
         
     def loadOar(self, ready, report, merge, x, y, z):
         try:
             print "[MGM] %s requested load oar" % self.name
             url = "http://127.0.0.1:" + str(self.console)
             console = RestConsole(url, self.consoleUser, self.consolePassword)
-            self.jobQueue.put({"name": "load_oar", "ready": ready, "report": report, "console": console, "merge": merge, "x":x, "y":y, "z":z})
+            self.worker.addJob({"name": "load_oar", "ready": ready, "report": report, "console": console, "merge": merge, "x":x, "y":y, "z":z})
         except:
             print "exception occurred"
             return False
@@ -478,7 +462,7 @@ class Region:
             print "[MGM] User requested load iar"
             url = "http://127.0.0.1:" + str(self.console)
             console = RestConsole(url, self.consoleUser, self.consolePassword)
-            self.jobQueue.put({"name": "load_iar", "ready": ready, "report": reportUrl, "console": console, "path": invPath, "user":avatar, "password":password})
+            self.worker.addJob({"name": "load_iar", "ready": ready, "report": reportUrl, "console": console, "path": invPath, "user":avatar, "password":password})
         except:
             return False
         return True
@@ -488,7 +472,7 @@ class Region:
             print "[MGM] User requested save iar"
             url = "http://127.0.0.1:" + str(self.console)
             console = RestConsole(url, self.consoleUser, self.consolePassword)
-            self.jobQueue.put({"name": "save_iar", "report": reportUrl, "upload": uploadUrl, "console": console, "path": invPath, "user":avatar, "password":password, "location":self.startDir})
+            self.worker.addJob({"name": "save_iar", "report": reportUrl, "upload": uploadUrl, "console": console, "path": invPath, "user":avatar, "password":password, "location":self.startDir})
         except:
             return False
         return True

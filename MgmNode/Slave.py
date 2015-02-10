@@ -4,20 +4,13 @@ Created on Jan 30, 2013
 @author: mheilman
 '''
 
-import os
-
 from Region import Region
-import time, uuid, logging, logging.handlers, json
-from os import listdir
-from os.path import isfile, join
+import time, uuid, json
 from Monitor import Monitor as MonitorWrapper
 from urllib import urlencode
 
-import xml.etree.ElementTree as ET
-
-from twisted.web import server, resource
+from twisted.web import resource
 from twisted.internet import reactor, task
-from twisted.internet import reactor
 import treq
 
 class Slave(resource.Resource):
@@ -25,7 +18,7 @@ class Slave(resource.Resource):
     def getChild(self, name, request):
         if name == '':
             return self
-        return Resource.getChild(self, name, request)
+        return resource.Resource.getChild(self, name, request)
 
     def render_GET(self, request):
         return "<html><body><h1>MOSES Grid Manager Node: %s</h1></body></html>" % self.host
@@ -168,7 +161,7 @@ class Slave(resource.Resource):
                 return json.dumps({ "Success": False, "Message": "Region already exists on this Node"})
             try:
                 port = self.availablePorts.pop(0)
-            except Exception, e:
+            except Exception:
                 return json.dumps({ "Success": False, "Message": "No slots remaining"})
             self.registeredRegions[name] = {
                 "proc": Region(port["port"],port["console"], name, self.binDir, self.regionDir, self.frontendAddress, self.publicAddress),
@@ -206,7 +199,6 @@ class Slave(resource.Resource):
                          
         ready = "http://%s/server/task/ready/%s" % (self.frontendAddress, job)
         report = "http://%s/server/task/report/%s" % (self.frontendAddress, job)
-        upload = "http://%s/server/task/upload/%s" % (self.frontendAddress, job)
 
         if self.registeredRegions[name]["proc"].loadIar(ready, report, inventoryPath, avatarName, avatarPassword):
             return json.dumps({ "Success": True})
@@ -217,8 +209,6 @@ class Slave(resource.Resource):
             return json.dumps({ "Success": False, "Message": "Region not present"})
         if not self.registeredRegions[name]["proc"].isRunning():
             return json.dumps({ "Success": False, "Message": "Region must be running to manage iars"})
-                         
-        ready = "http://%s/server/task/ready/%s" % (self.frontendAddress, job)
         report = "http://%s/server/task/report/%s" % (self.frontendAddress, job)
         upload = "http://%s/server/task/upload/%s" % (self.frontendAddress, job)
         if self.registeredRegions[name]["proc"].saveIar(report, upload, inventoryPath, avatarName, avatarPassword):
@@ -233,9 +223,8 @@ class Slave(resource.Resource):
             
         report = "http://%s/server/task/report/%s" % (self.frontendAddress, job)
         upload = "http://%s/server/task/upload/%s" % (self.frontendAddress, job)
-        if self.registeredRegions[name]["proc"].saveOar(report, upload):
-            return json.dumps({ "Success": True})
-        return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
+        self.registeredRegions[name]["proc"].saveOar(report, upload)
+        return json.dumps({ "Success": True})
         
     def loadOar(self, name, job, merge, x, y, z):
         if not name in self.registeredRegions:

@@ -16,14 +16,13 @@ class RestConsole():
         
     def close(self):
         url = self.url + "CloseSession/"
-        r = requests.post(url, data={ 'ID': self.session}, verify=False)
+        requests.post(url, data={ 'ID': self.session}, verify=False)
         
     def write(self, cmd):
         url = self.url + "SessionCommand/"
         requests.post(url, data={ 'ID': self.session, 'COMMAND': cmd}, verify=False)
         
     def read(self):
-        lines = []
         url = self.url + "ReadResponses/%s/" % self.session
         r = requests.post(url, data={ 'ID': self.session}, verify=False)
         return r.content

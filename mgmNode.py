@@ -10,9 +10,9 @@ from MgmNode.Slave import Slave
 
 import socket, string
 
-from OpenSSL import crypto, SSL
+from OpenSSL import crypto
 
-from twisted.web import server, resource
+from twisted.web import server
 from twisted.internet import reactor, ssl
 
 def modulePath():

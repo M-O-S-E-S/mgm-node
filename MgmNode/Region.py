@@ -59,13 +59,13 @@ class RegionLogger( protocol.ProcessProtocol ):
             self.messages.append(log)
     
     def inConnectionLost(self):
-        pass
+        self.worker.abort()
         
     def outConnectionLost(self):
-        pass
+        self.worker.abort()
         
     def errConnectionLost(self):
-        pass
+        self.worker.abort()
         
     def processExited(self, reason):
         self.isRunning = False

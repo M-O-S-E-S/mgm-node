@@ -4,7 +4,7 @@ Created on Feb 1, 2013
 @author: mheilman
 '''
 import os, psutil, json, re, shutil, time
-from urllib import urlencode
+from urllib import urlencode, quote
 
 from RestConsole import RestConsole
 
@@ -19,7 +19,7 @@ class RegionLogger( protocol.ProcessProtocol ):
     def __init__(self, url, region, worker):
         self. messages = []
         self.regexp = re.compile(r'^{[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}}.*')
-        self.url = "http://%s/server/dispatch/logs/%s" % (url,region)
+        self.url = "http://%s/server/dispatch/logs/%s" % (url,quote(region))
         self.region = region
         self.isRunning = False
         self.worker = worker
@@ -261,7 +261,7 @@ class Region:
         self.name = procName
         self.externalAddress = externalAddress
         self.dispatchUrl = dispatchUrl
-        self.startString = "OpenSim.exe -console rest -name %%s -logconfig %s.cfg" % procName
+        self.startString = "OpenSim.exe -console rest -logconfig moses.cfg"
 
         self.startFailCounter = 0
         self.stopFailCounter = 0
@@ -286,7 +286,7 @@ class Region:
 			if os.path.getmtime(regionDir) > os.path.getmtime(self.startDir):
 				shutil.rmtree(self.startDir)
 				shutil.copytree(binDir, self.startDir)
-        self.configFile = os.path.join(self.startDir, '%s.cfg' % procName)
+        self.configFile = os.path.join(self.startDir, 'moses.cfg')
         self.exe = os.path.join(self.startDir, 'OpenSim.exe')
             
     def isRunning(self):
@@ -374,7 +374,7 @@ class Region:
             return
                 
         #kickoff loading on ini file
-        url = "http://%s/server/dispatch/process/%s?httpPort=%s&consolePort=%s&externalAddress=%s" % (self.dispatchUrl, self.name, self.port, self.console, self.externalAddress)
+        url = "http://%s/server/dispatch/process/%s?httpPort=%s&consolePort=%s&externalAddress=%s" % (self.dispatchUrl, quote(self.name), self.port, self.console, self.externalAddress)
         dIni = treq.get(url.encode('ascii'))
         
         def receivedIniConfig(result):
@@ -393,13 +393,13 @@ class Region:
             f.close()
         
         def errorCB(reason):
-            print "Error pulloing configs from MGM:", reason.getErrorMessage()
+            print "Error pulling configs from MGM:", reason.getErrorMessage()
         
         dIni.addCallback(treq.collect,receivedIniConfig)
         dIni.addErrback(errorCB)
         
         #kickoff loading region file
-        url = "http://%s/server/dispatch/region/%s" % (self.dispatchUrl, self.name)
+        url = "http://%s/server/dispatch/region/%s" % (self.dispatchUrl, quote(self.name))
         dRegion = treq.get(url.encode('ascii'))
         
         def receivedRegionConfig(result):
@@ -429,8 +429,7 @@ class Region:
         dl = defer.DeferredList([dIni, dRegion])
         
         def execute(result):
-            namedString = self.startString % self.name
-            starter = namedString.split(" ")
+            starter = self.startString.split(" ")
             self.pid = reactor.spawnProcess(self.pp, starter[0], args=starter,path=self.startDir,env=None)
             reactor.callLater(10, self.updateProcStats)
             

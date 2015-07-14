@@ -12,7 +12,7 @@ On centos, all requisite packages at appropriate versions are present in EPEL
 python-psutil python-requests python-twisted-web
 
 ### Installation
-MgmNode is a simple python application.  It requires an installed mgm instance be available on its network, with the ip address of the machine running mgmNode to be listed as a host by mgm.  MgmNode includes an example upstart script, as well as a py2exe script called freeze.py if running on Windows without an installed python runtime is necessary.
+MgmNode is a simple python application.  It requires an installed mgm instance be available on its network, with the ip address of the machine running mgmNode to be listed as a host by mgm.  MgmNode includes an example upstart script, an example systemd script, as well as a py2exe script called freeze.py if running on Windows without an installed python runtime is necessary.
 
 MgmNode is currently tested on python 2.7, and will run wherever that, and its required packages are available.  
 
@@ -23,7 +23,7 @@ MgmNode is currently tested on python 2.7, and will run wherever that, and its r
 1. Update mgm.cfg to match your file layout, and network ports.
 1. Run `python mgmNode/mgmNode.py` to confirm all apackages present and test isntallation.  If you have many ports configured this may take a few minutes before it prints to the console, as it is performing a file copy from opensim into regions
 1. Add the ip address of your mgmNode host to MGM.  If they are on the same host, use external ip addresses instead of 127.0.0.1
-1. Reference the mgmNode/upstart script for running mgmNode as a service
+1. Reference the service/mgmNode.conf upstart script, or the service/mgmNode.service systemd script for running mgmNode as a service
 1.  Allow ports 8080 and your configured ports through iptables if necessary
 
 ## Windows

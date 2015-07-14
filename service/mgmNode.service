@@ -1,0 +1,14 @@
+# This systemd service is the mgmNode daemon
+
+[Unit]
+Description=MGM slave node daemon
+After=syslog.target network.target
+
+[Service]
+User=moses
+WorkingDirectory=/home/moses/mgmNode
+ExecStart=/home/moses/mgmNode/mgmNode.py &
+ExecStop=/usr/bin/killall mgmNode.py
+
+[Install]
+WantedBy=multi-user.target

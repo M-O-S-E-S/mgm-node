@@ -9,7 +9,9 @@ On centos, all requisite packages at appropriate versions are present in EPEL
 
 ### Required Packages
 
-python-psutil python-requests python-twisted-web
+apt package names: python-psutil python-requests python-twisted-web
+
+on windows: locate and install python, psutil, requests, and twisted modules as separate installables from various websites, such as pypi.python.org
 
 ### Installation
 MgmNode is a simple python application.  It requires an installed mgm instance be available on its network, with the ip address of the machine running mgmNode to be listed as a host by mgm.  MgmNode includes an example upstart script, an example systemd script, as well as a py2exe script called freeze.py if running on Windows without an installed python runtime is necessary.

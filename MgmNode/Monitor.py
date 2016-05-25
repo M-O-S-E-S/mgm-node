@@ -6,12 +6,12 @@ class Monitor:
     def __init__(self):
         self.last_time = time.time()
         psutil.cpu_percent(interval=0)
-        self.pnic_vals_before = psutil.network_io_counters(pernic=False)
+        self.pnic_vals_before = psutil.net_io_counters(pernic=False)
         self.stats = {}
 
     def updateStatistics(self):
         stats = {}
-        hostMem = psutil.phymem_usage()
+        hostMem = psutil.virtual_memory()
         stats["memPercent"] = hostMem.percent
         stats["memKB"] = hostMem.used / 1024
 
@@ -21,7 +21,7 @@ class Monitor:
         self.last_time = time.time()
 
         stats["timestamp"] = self.last_time
-        pnic_vals_after = psutil.network_io_counters(pernic=False)
+        pnic_vals_after = psutil.net_io_counters(pernic=False)
 
         stats["netSentPer"] = (pnic_vals_after.bytes_sent - self.pnic_vals_before.bytes_sent)/elapsed
         stats["netRecvPer"] = (pnic_vals_after.bytes_recv - self.pnic_vals_before.bytes_recv)/elapsed

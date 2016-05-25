@@ -7,6 +7,7 @@ import os, psutil, json, time, requests, threading, Queue as QX, re, shutil, tim
 from multiprocessing import Process, Queue
 from threading import Thread
 from subprocess import PIPE
+import xml.etree.cElementTree as ET
 
 from psutil import Popen
 
@@ -269,7 +270,7 @@ class Region:
         self.name = procName
         self.externalAddress = externalAddress
         self.dispatchUrl = dispatchUrl
-        self.startString = "OpenSim.exe -console rest -name %%s -logconfig %s.cfg" % procName
+        self.startString = "Halcyon.exe -console rest -name %%s -logconfig %s.cfg" % procName
 
         self.trackStage = "stopped"
         self.startFailCounter = 0
@@ -277,13 +278,13 @@ class Region:
         self.simStatsCounter = 0
         self.simPhysicsCounter = 0
 
+        self.startDir = os.path.join(regionDir, self.name)
         if os.name != 'nt':
             self.startString = "mono %s" % self.startString
         else:
-            self.startString = self.startDir + self.startString
+            self.startString = os.path.join(self.startDir, self.startString)
 
         #clean up/create region folder
-        self.startDir = os.path.join(regionDir, self.name)
         if not os.path.isdir(self.startDir):
             shutil.copytree(binDir, self.startDir)
         else:
@@ -292,7 +293,7 @@ class Region:
 				shutil.rmtree(self.startDir)
 				shutil.copytree(binDir, self.startDir)
         self.configFile = os.path.join(self.startDir, '%s.cfg' % procName)
-        self.exe = os.path.join(self.startDir, 'OpenSim.exe')
+        self.exe = os.path.join(self.startDir, 'Halcyon.exe')
 
         #set up threaded worker
         self.jobQueue = Queue()
@@ -320,7 +321,7 @@ class Region:
         if not self.proc:
             return False
         try:
-            if self.proc.status in [psutil.STATUS_RUNNING, psutil.STATUS_SLEEPING, psutil.STATUS_DISK_SLEEP]:
+            if self.proc.status() in [psutil.STATUS_RUNNING, psutil.STATUS_SLEEPING, psutil.STATUS_DISK_SLEEP]:
                 return True
         except psutil.NoSuchProcess:
             return False
@@ -341,16 +342,16 @@ class Region:
         stats["timestamp"] = time.time()
         if self.isRunning():
 			#try:
-            stats["uptime"] = time.time() - self.proc.create_time
-            stats["memPercent"] = self.proc.get_memory_percent()
-            stats["memKB"] = self.proc.get_memory_info().rss / 1024
-            stats["cpuPercent"] = self.proc.get_cpu_percent(0.1)
-            try:
-                r = requests.get("http://127.0.0.1:%d/jsonSimStats" % self.port, timeout=0.5)
-                if r.status_code == requests.codes.ok:
-                    stats["simStats"] = json.loads(r.content)
-            except:
-                pass
+            stats["uptime"] = time.time() - self.proc.create_time()
+            stats["memPercent"] = self.proc.memory_percent()
+            stats["memKB"] = self.proc.memory_info().rss / 1024
+            stats["cpuPercent"] = self.proc.cpu_percent(0.1)
+            #try:
+            #    r = requests.get("http://127.0.0.1:%d/jsonSimStats" % self.port, timeout=0.5)
+            #    if r.status_code == requests.codes.ok:
+            #        stats["simStats"] = json.loads(r.content)
+            #except:
+            #    pass
         self.stats =  stats
 
     def writeConfig(self):
@@ -359,7 +360,7 @@ class Region:
         if r.status_code == requests.codes.ok:
             content = json.loads(r.content)
             region = content["Region"]
-            f = open(os.path.join(self.startDir, 'OpenSim.ini'), 'w')
+            f = open(os.path.join(self.startDir, 'Halcyon.ini'), 'w')
             for section in region:
                 f.write('[%s]\n' % section)
                 for item in region[section]:
@@ -376,19 +377,36 @@ class Region:
         if r.status_code == requests.codes.ok:
             content = json.loads(r.content)
             region = content["Region"]
-            f = open(os.path.join(self.startDir, 'Regions', 'Regions.ini'), 'w')
-            f.write("[%s]\n" % self.name)
-            f.write('RegionUUID = "%s"\n' % region["uuid"])
-            f.write('Location = "%s,%s"\n' % (region["locX"], region["locY"]))
-            f.write('InternalAddress = "0.0.0.0"\n')
-            f.write('InternalPort = %s\n' % region["httpPort"])
-            f.write('SizeX=%d\n' % (256*int(region["size"])))
-            f.write('SizeY=%d\n' % (256*int(region["size"])))
-            f.write('AllowAlternatePorts = False\n')
-            f.write('ExternalHostName = "%s"\n' % region["externalAddress"])
-            f.write('SyncServerAddress = 127.0.0.1\n')
-            f.write('SyncServerPort = 15000\n')
-            f.close()
+            root = ET.Element('Root')
+            config = ET.SubElement(root, 'Config')
+            config.set("sim_UUID", region["RegionUUID"])
+            config.set("sim_name", self.name)
+            config.set("sim_location_x", str(region["LocationX"]))
+            config.set("sim_location_y", str(region["LocationY"]))
+            config.set("internal_ip_address", "0.0.0.0")
+            config.set("internal_ip_port", str(self.port))
+            config.set("allow_alternate_ports", "false")
+            config.set("external_host_name", self.externalAddress)
+            config.set("master_avatar_uuid", "00000000-0000-0000-0000-000000000000")
+            config.set("master_avatar_first", "first")
+            config.set("master_avatar_last", "last")
+            config.set("master_avatar_pass", "23459873204987wkjhbao873q4tr7u3q4of7")
+            config.set("lastmap_uuid", "00000000-0000-0000-0000-000000000000")
+            config.set("lastmap_refresh", "0")
+            config.set("nonphysical_prim_max", "0")
+            config.set("physical_prim_max", "0")
+            config.set("clamp_prim_size", "false")
+            config.set("object_capacity", "0")
+            config.set("region_product", "0")
+            config.set("region_access", "0")
+            config.set("outside_ip", self.externalAddress)
+
+            if not os.path.exists(os.path.join(self.startDir, 'Regions')):
+                os.mkdir(os.path.join(self.startDir, 'Regions'))
+
+            tree = ET.ElementTree(root)
+            tree.write(os.path.join(self.startDir, 'Regions', 'default.xml'))
+
 
         # logging config file
         cfgFile = open(self.configFile, "w")
@@ -449,15 +467,15 @@ class Region:
         if self.loggerProcess:
 			self.loggerProcess.shutdown = True
 
+        # get log4net to log to stdout for easy capture
         self.writeConfig()
 
         self.logQueue.put("[MGM] %s starting" % self.name)
 
-        print "Region %s Started" % self.name
-        mono_env = os.environ.copy()
-        mono_env["MONO_THREADS_PER_CPU"] = "2000"
+        print "Region %s Starting" % self.name
         namedString = self.startString % self.name
-        self.proc = Popen(namedString.split(" "), cwd=self.startDir, stdout=PIPE, stderr=PIPE, env=mono_env)
+        self.proc = Popen(namedString.split(" "), cwd=self.startDir, stdout=PIPE, stderr=PIPE)
+
         self.workerProcess = RegionWorker(self.jobQueue, self.logQueue)
         self.workerProcess.daemon = True
         self.workerProcess.start()

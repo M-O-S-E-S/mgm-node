@@ -16,11 +16,11 @@ def modulePath():
     if hasattr(sys,"frozen"):
         return os.path.dirname(unicode(sys.executable, sys.getfilesystemencoding( )))
     return os.path.dirname(unicode(__file__, sys.getfilesystemencoding( )))
-    
+
 def generateCerts(certFile, keyFile):
     k = crypto.PKey()
     k.generate_key(crypto.TYPE_RSA, 1024)
-    
+
     cert = crypto.X509()
     cert.get_subject().C = "US"
     cert.get_subject().ST = "Florida"
@@ -34,7 +34,7 @@ def generateCerts(certFile, keyFile):
     cert.set_issuer(cert.get_subject())
     cert.set_pubkey(k)
     cert.sign(k, 'sha1')
-    
+
     open(certFile, "wt").write(
         crypto.dump_certificate(crypto.FILETYPE_PEM, cert))
     open(keyFile, "wt").write(
@@ -50,33 +50,34 @@ def loadConfig(filePath):
     conf['binDir'] = config.get('node','opensim_template')
     conf['regionDir'] = config.get('node','region_dir')
     conf['webAddress'] = config.get('node', 'mgm_address')
-    conf['certFile'] = config.get('ssl', 'cert')
-    conf['keyFile'] = config.get('ssl', 'key')
+    conf['webPort'] = config.get('node', 'mgm_port')
+    #conf['certFile'] = config.get('ssl', 'cert')
+    #conf['keyFile'] = config.get('ssl', 'key')
     conf['interval'] = int(config.get('node', 'sample_interval'))
-    
+
     portRange = config.get('node','region_port_range')
     consoleRange = config.get('node','console_port_range')
-    
+
     vals = string.split(portRange,'-')
     conf['regionPorts'] = range(int(vals[0]),int(vals[1])+1)
-        
+
     vals = string.split(consoleRange,'-')
     conf['consolePorts'] = range(int(vals[0]),int(vals[1])+1)
 
     return conf
-    
+
 
 if sys.platform == "win32":
     import win32serviceutil, win32service
     class NodeService(win32serviceutil.ServiceFramework):
         _svc_name_ = "MGMNode"
         _svc_display_name_ = "MGM Host Node"
-        
+
         def SvcStop(self):
             self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
             cherrypy.engine.exit()
             self.ReportServiceStatus(win32service.SERVICE_STOPPED)
-        
+
         def SvcDoRun(self):
             self.ReportServiceStatus(win32service.SERVICE_RUNNING)
             localPath = modulePath()
@@ -97,12 +98,12 @@ if sys.platform == "win32":
             })
             cherrypy.engine.start()
             cherrypy.engine.block()
-            
+
 def start():
     conf = loadConfig(os.path.join(modulePath() ,'mgm.cfg'))
     app = Slave(conf)
-    if not os.path.isfile(conf['certFile']) or not os.path.isfile(conf['keyFile']):
-        generateCerts(conf['certFile'], conf['keyFile'])
+    #if not os.path.isfile(conf['certFile']) or not os.path.isfile(conf['keyFile']):
+    #    generateCerts(conf['certFile'], conf['keyFile'])
     cherrypy.config.update({
         'global':{
             'server.socket_host':'0.0.0.0',
@@ -111,9 +112,9 @@ def start():
             'engine.autoreload.on': False,
             'engine.SIGHUP': None,
             'engine.SIGTERM': None,
-            'server.ssl_module': 'pyopenssl',
-            'server.ssl_certificate':conf['certFile'],
-            'server.ssl_private_key':conf['keyFile']
+            #'server.ssl_module': 'pyopenssl',
+            #'server.ssl_certificate':conf['certFile'],
+            #'server.ssl_private_key':conf['keyFile']
         }
     })
     cherrypy.quickstart(app, config={'/': {}})

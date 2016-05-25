@@ -2,36 +2,37 @@
 import psutil, time, json
 
 class Monitor:
-    
+
     def __init__(self):
         self.last_time = time.time()
         psutil.cpu_percent(interval=0)
         self.pnic_vals_before = psutil.network_io_counters(pernic=False)
         self.stats = {}
-        
+
     def updateStatistics(self):
         stats = {}
         hostMem = psutil.phymem_usage()
         stats["memPercent"] = hostMem.percent
         stats["memKB"] = hostMem.used / 1024
-        
+
         stats["cpuPercent"] = psutil.cpu_percent(interval=0, percpu=1)
-        
+
         elapsed = time.time() - self.last_time
         self.last_time = time.time()
 
+        stats["timestamp"] = self.last_time
         pnic_vals_after = psutil.network_io_counters(pernic=False)
-        
+
         stats["netSentPer"] = (pnic_vals_after.bytes_sent - self.pnic_vals_before.bytes_sent)/elapsed
         stats["netRecvPer"] = (pnic_vals_after.bytes_recv - self.pnic_vals_before.bytes_recv)/elapsed
-        
+
         self.pnic_vals_before = pnic_vals_after
         self.stats = stats
-        
+
     def getJsonStats(self):
         stats = self.stats
         return json.dumps(stats)
-        
+
     def bytes2human(self,n):
         """
         >>> bytes2human(10000)

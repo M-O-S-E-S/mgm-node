@@ -3,11 +3,10 @@ Created on Feb 1, 2013
 
 @author: mheilman
 '''
-import os, psutil, json, time, requests, threading, Queue as QX, re, shutil
+import os, psutil, json, time, requests, threading, Queue as QX, re, shutil, time
 from multiprocessing import Process, Queue
 from threading import Thread
 from subprocess import PIPE
-
 
 from psutil import Popen
 
@@ -25,7 +24,7 @@ class RegionLogger( Thread ):
         self.stderr = stderr
         self.stdout = stdout
         self.shutdown = False
-        
+
     def run(self):
         self.stdin = threading.Thread(target=self.logToOut, args=(self.stdout,))
         self.stdin.daemon = True
@@ -33,7 +32,7 @@ class RegionLogger( Thread ):
         self.stdout = threading.Thread(target=self.logToOut, args=(self.stderr,))
         self.stdout.daemon = True
         self.stdout.start()
-        
+
         try:
             while not self.shutdown:
                 time.sleep(10)
@@ -63,7 +62,7 @@ class RegionLogger( Thread ):
         except:
             #we receive sigint and sigterm during normal operation, exit
             pass
-	
+
     def logToOut(self, pipe):
         while True:
             line = pipe.readline()
@@ -73,13 +72,13 @@ class RegionLogger( Thread ):
 
 class RegionWorker( Thread ):
     """a threaded class to handle long running tasks that may output files locally"""
-    
+
     def __init__(self, jobQueue, logQueue):
         super(RegionWorker, self).__init__()
         self.queue = jobQueue
         self.log = logQueue
         self.shutdown = False
-    
+
     def run(self):
         self.log.put("[MGM] region worker process started")
         try:
@@ -90,7 +89,7 @@ class RegionWorker( Thread ):
                     job = self.queue.get(False)
                 except QX.Empty:
                     continue
-                
+
                 #operate
                 if job['name'] == "save_oar":
                     self.saveOar(job["reportUrl"],job["uploadUrl"], job["console"],job["location"],job["region"])
@@ -106,7 +105,7 @@ class RegionWorker( Thread ):
             self.log.put("[MGM] region worker process exiting")
             #we most likely received a sigint
             pass
-                
+
     def loadIar(self, ready, report, console, inventoryPath, user, password):
         self.log.put("[MGM] starting load iar task")
         console.read()
@@ -128,7 +127,7 @@ class RegionWorker( Thread ):
                     continue
                 done = True
                 break
-                
+
         console.close()
         if done:
             # report back to master
@@ -142,7 +141,7 @@ class RegionWorker( Thread ):
         r = requests.post(report, data={"Success": False, "Done": True, "Message": "Unknown error"}, verify=False)
         self.log.put("[MGM] load iar unknown error")
         print "An error occurred loading iar file, we are not aborted or done"
-        
+
     def saveIar(self, report, upload, console, inventoryPath, user, password, iarDir):
         console.read()
         start = time.time()
@@ -164,12 +163,12 @@ class RegionWorker( Thread ):
                     continue
                 done = True
                 break
-        
+
         console.close()
         if done:
             #post iar file back to mgm with job number
             iar = os.path.join(iarDir,iarName)
-            r = requests.post(upload, data={"Success": True}, files={'file': (iarName, open(iar, 'rb'))}, verify=False)
+            r = requests.post(upload, data={"Success": True}, files={'file': (user, open(iar, 'rb'))}, verify=False)
             os.remove(iar)
             self.log.put("[MGM] save iar completed successfully")
             return
@@ -180,7 +179,7 @@ class RegionWorker( Thread ):
         r = requests.post(report, data={"Success": False, "Done": True, "Message": "Unknown error"}, verify=False)
         self.log.put("[MGM] save iar unknown error")
         print "An error occurred saving iar file, we are not aborted or done"
-    
+
     def loadOar(self, ready, report, console, merge, x, y, z):
         self.log.put("[MGM] starting load oar task")
         console.read()
@@ -205,7 +204,7 @@ class RegionWorker( Thread ):
                     continue
                 done = True
                 break
-                
+
         console.close()
         if done:
             # report back to master
@@ -219,7 +218,7 @@ class RegionWorker( Thread ):
         r = requests.post(report, data={"Success": False, "Done": True, "Message": "Unknown error"}, verify=False)
         self.log.put("[MGM] load oar unknown error")
         print "An error occurred loading oar file, we are not aborted or done"
-        
+
     def saveOar(self, report, upload, console, oarDir, regionName):
         self.log.put("[MGM] starting save oar task")
         console.read()
@@ -242,7 +241,7 @@ class RegionWorker( Thread ):
                     continue
                 done = True
                 break
-        
+
         console.close()
         if done:
             #post oar file back to mgm with job number
@@ -261,10 +260,10 @@ class RegionWorker( Thread ):
 
 class Region:
     """A wrapper class aroudn a psutil popen instance of a region; handling logging and beckground tasks associated with this region"""
-    def __init__(self, regionPort, consolePort, procName, binDir, regionDir, dispatchUrl, externalAddress):   
+    def __init__(self, regionPort, consolePort, procName, binDir, regionDir, dispatchUrl, externalAddress):
         self.proc = None
         self.stats = {}
-        
+
         self.port = regionPort
         self.console = consolePort
         self.name = procName
@@ -277,12 +276,12 @@ class Region:
         self.stopFailCounter = 0
         self.simStatsCounter = 0
         self.simPhysicsCounter = 0
-        
+
         if os.name != 'nt':
             self.startString = "mono %s" % self.startString
         else:
             self.startString = self.startDir + self.startString
-            
+
         #clean up/create region folder
         self.startDir = os.path.join(regionDir, self.name)
         if not os.path.isdir(self.startDir):
@@ -294,17 +293,17 @@ class Region:
 				shutil.copytree(binDir, self.startDir)
         self.configFile = os.path.join(self.startDir, '%s.cfg' % procName)
         self.exe = os.path.join(self.startDir, 'OpenSim.exe')
-        
+
         #set up threaded worker
         self.jobQueue = Queue()
         self.logQueue = Queue()
         self.workerProcess = None
         self.loggerProcess = None
-        
+
     def __del__(self):
         self.terminate()
-    
-    #called on Slave shutdown        
+
+    #called on Slave shutdown
     def terminate(self):
         '''Kill process'''
         if self.proc:
@@ -316,7 +315,7 @@ class Region:
             self.workerProcess.shutdown = True
         if self.loggerProcess:
             self.loggerProcess.shutdown = True
-            
+
     def isRunning(self):
         if not self.proc:
             return False
@@ -326,19 +325,20 @@ class Region:
         except psutil.NoSuchProcess:
             return False
         return False
-    
+
     def getJsonStats(self):
         stats = self.stats
         return json.dumps(stats)
-    
+
     def update(self):
         #update stats
         self.updateProcStats()
-      
+
     def updateProcStats(self):
         """we can access most of this for the web, but we are compiling it to send xml to MGM"""
         stats = {}
-        stats["stage"] = self.trackStage	
+        stats["stage"] = self.trackStage
+        stats["timestamp"] = time.time()
         if self.isRunning():
 			#try:
             stats["uptime"] = time.time() - self.proc.create_time
@@ -352,7 +352,7 @@ class Region:
             except:
                 pass
         self.stats =  stats
-           
+
     def writeConfig(self):
         # opensim.ini file
         r = requests.get("http://%s/server/dispatch/process/%s?httpPort=%s&consolePort=%s&externalAddress=%s" % (self.dispatchUrl, self.name, self.port, self.console, self.externalAddress))
@@ -370,7 +370,7 @@ class Region:
                         if item == "ConsolePass":
                             self.consolePassword = region[section][item]
             f.close()
-        
+
         # regions file
         r = requests.get("http://%s/server/dispatch/region/%s" % (self.dispatchUrl, self.name))
         if r.status_code == requests.codes.ok:
@@ -389,7 +389,7 @@ class Region:
             f.write('SyncServerAddress = 127.0.0.1\n')
             f.write('SyncServerPort = 15000\n')
             f.close()
-        
+
         # logging config file
         cfgFile = open(self.configFile, "w")
         cfgFile.write( """<?xml version="1.0" encoding="utf-8" ?>
@@ -429,7 +429,7 @@ class Region:
 </configuration>
 """)
         cfgFile.close()
-    
+
     def start(self):
         self.logQueue.put("[MGM] %s user requested to start" % self.name)
         self.trackStage = "running"
@@ -439,20 +439,20 @@ class Region:
         self.stopFailCounter = 0
         threading.Thread(target=self.startProcess)
         self.startProcess()
-    
+
     def startProcess(self):
         if self.isRunning():
             return
-        
+
         if self.workerProcess:
             self.workerProcess.shutdown = True
         if self.loggerProcess:
 			self.loggerProcess.shutdown = True
-        
+
         self.writeConfig()
-        
+
         self.logQueue.put("[MGM] %s starting" % self.name)
-        
+
         print "Region %s Started" % self.name
         mono_env = os.environ.copy()
         mono_env["MONO_THREADS_PER_CPU"] = "2000"
@@ -464,7 +464,7 @@ class Region:
         self.loggerProcess = RegionLogger(self.dispatchUrl, self.name, self.proc.stdout, self.proc.stderr, self.logQueue)
         self.loggerProcess.daemon = True
         self.loggerProcess.start()
-    
+
     def stop(self):
         self.trackStage = "stopped"
         self.stopFailCounter = 0
@@ -472,7 +472,7 @@ class Region:
         self.simStatsCounter = 0
         self.simPhysicsCounter = 0
         self.logQueue.put("[MGM] %s requested Stop" % self.name)
-        
+
     def stopProcess(self):
         if self.isRunning():
             self.logQueue.put("[MGM] %s Terminating" % self.name)
@@ -492,7 +492,7 @@ class Region:
         except:
             return False
         return True
-        
+
     def loadOar(self, ready, report, merge, x, y, z):
         try:
             self.logQueue.put("[MGM] %s requested load oar" % self.name)
@@ -503,7 +503,7 @@ class Region:
             print "exception occurred"
             return False
         return True
-        
+
     def loadIar(self, ready, reportUrl, invPath, avatar, password):
         try:
             self.logQueue.put("[MGM] User requested load iar")
@@ -513,7 +513,7 @@ class Region:
         except:
             return False
         return True
-        
+
     def saveIar(self, reportUrl, uploadUrl, invPath, avatar, password):
         try:
             self.logQueue.put("[MGM] User requested save iar")

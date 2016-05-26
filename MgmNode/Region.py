@@ -6,70 +6,74 @@ Created on Feb 1, 2013
 import os, psutil, json, time, requests, threading, Queue as QX, re, shutil, time
 from multiprocessing import Process, Queue
 from threading import Thread
-from subprocess import PIPE
+#from subprocess import PIPE
 import xml.etree.cElementTree as ET
 
 from psutil import Popen
 
 from RestConsole import RestConsole
 
+# the pit in which to throw normal process output
+DEVNULL = open(os.devnull, 'wb')
+
 class RegionLogger( Thread ):
     """A threaded class to capture stdout and stderr, and upload them in batches to MGM"""
 
-    def __init__(self, url, region, stderr, stdout, queue):
+    def __init__(self, url, logFile, region, queue):
         super(RegionLogger, self).__init__()
-        self.queue = queue
-        self.regexp = re.compile(r'^{[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}}.*')
         self.url = "http://%s/server/dispatch/logs/%s" % (url,region)
         self.region = region
-        self.stderr = stderr
-        self.stdout = stdout
+        self.logFile = logFile
         self.shutdown = False
+        self.queue = queue
 
     def run(self):
-        self.stdin = threading.Thread(target=self.logToOut, args=(self.stdout,))
-        self.stdin.daemon = True
-        self.stdin.start()
-        self.stdout = threading.Thread(target=self.logToOut, args=(self.stderr,))
-        self.stdout.daemon = True
-        self.stdout.start()
-
+        f = None
         try:
-            while not self.shutdown:
-                time.sleep(10)
-                if not self.queue.empty():
-                    messages = []
-                    try:
-                        for i in range(self.queue.qsize()):
-                            line = self.queue.get(False)
-                            if self.regexp.search(line) is not None:
-                                parts = line.split("-", 1)
-                                log = {}
-                                log["timestamp"] = "%s %s" % (time.strftime("%Y-%m-%d"), parts[0].strip())
-                                log["message"] = parts[1].strip()
-                                messages.append(log)
-                            else:
-                                log = {}
-                                log["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
-                                log["message"] = line
-                                messages.append(log)
-                    except QX.Empty:
-                        pass
+            while f is None:
+                if not os.path.isfile(self.logFile):
+                    print "log file does not exist yet, sleeping and waiting"
+                    time.sleep(5)
+                    continue
+                f = open(self.logFile, 'r')
 
-                    if len(messages) > 0:
-                        req = requests.post(self.url,data={'log':json.dumps(messages)}, verify=False)
-                        if not req.status_code == requests.codes.ok:
-                            print "Error sending %s: %s" % (self.region, req.content)
-        except:
+            lines = []
+            while not self.shutdown:
+
+                # read internal log queue
+                try:
+                    for i in range(self.queue.qsize()):
+                        line = self.queue.get(False)
+                        if line:
+                            lines.append(line)
+                except QX.Empty:
+                    pass
+
+                # read log file
+                while True && len(lines) < 100:
+                    line = f.readline()
+                    if not line:
+                        break
+                    lines.append(line)
+
+                if len(lines) > 0:
+                    try:
+                        req = requests.post(self.url,data={'log': json.dumps(lines)}, verify=False)
+                    except requests.ConnectionError:
+                        print "error uploading logs to master"
+                        time.sleep(1)
+                        continue
+                    if not req.status_code == requests.codes.ok:
+                        print "Error sending %s: %s" % (self.region, req.content)
+                    else:
+                        #logs uploaded successfully
+                        lines = []
+                else:
+                    time.sleep(1)
+        except Exception,e:
             #we receive sigint and sigterm during normal operation, exit
             pass
 
-    def logToOut(self, pipe):
-        while True:
-            line = pipe.readline()
-            if line.strip() != "":
-                self.queue.put(line.strip())
-            time.sleep(.25)
 
 class RegionWorker( Thread ):
     """a threaded class to handle long running tasks that may output files locally"""
@@ -77,8 +81,8 @@ class RegionWorker( Thread ):
     def __init__(self, jobQueue, logQueue):
         super(RegionWorker, self).__init__()
         self.queue = jobQueue
-        self.log = logQueue
         self.shutdown = False
+        self.log = logQueue
 
     def run(self):
         self.log.put("[MGM] region worker process started")
@@ -270,9 +274,9 @@ class Region:
         self.name = procName
         self.externalAddress = externalAddress
         self.dispatchUrl = dispatchUrl
-        self.startString = "Halcyon.exe -console rest -name %%s -logconfig %s.cfg" % procName
+        #self.startString = "Halcyon.exe -console rest -name %%s -logconfig %s.cfg" % procName
+        self.startString = "Halcyon.exe -console rest -name %s"# -logconfig %s.cfg" % procName
 
-        self.trackStage = "stopped"
         self.startFailCounter = 0
         self.stopFailCounter = 0
         self.simStatsCounter = 0
@@ -338,7 +342,6 @@ class Region:
     def updateProcStats(self):
         """we can access most of this for the web, but we are compiling it to send xml to MGM"""
         stats = {}
-        stats["stage"] = self.trackStage
         stats["timestamp"] = time.time()
         if self.isRunning():
 			#try:
@@ -407,50 +410,8 @@ class Region:
             tree = ET.ElementTree(root)
             tree.write(os.path.join(self.startDir, 'Regions', 'default.xml'))
 
-
-        # logging config file
-        cfgFile = open(self.configFile, "w")
-        cfgFile.write( """<?xml version="1.0" encoding="utf-8" ?>
-<configuration>
-  <configSections>
-    <section name="log4net" type="log4net.Config.Log4NetConfigurationSectionHandler,log4net" />
-  </configSections>
-  <runtime>
-    <gcConcurrent enabled="true" />
-        <gcServer enabled="true" />
-  </runtime>
-  <appSettings></appSettings>
-  <log4net>
-    <appender name="Console" type="OpenSim.Framework.Console.OpenSimAppender, OpenSim.Framework.Console">
-      <layout type="log4net.Layout.PatternLayout">
-        <conversionPattern value="%date{{HH:mm:ss}} - %message" />
-      </layout>
-    </appender>
-    <appender name="StatsLogFileAppender" type="log4net.Appender.FileAppender">
-      <file value="OpenSimStats.log"/>
-      <appendToFile value="true" />
-      <layout type="log4net.Layout.PatternLayout">
-        <conversionPattern value="%date - %message%newline" />
-      </layout>
-    </appender>
-    <root>
-      <level value="DEBUG" />
-      <appender-ref ref="Console" />
-    </root>
-    <logger name="OpenSim.Region.ScriptEngine.XEngine">
-      <level value="INFO"/>
-    </logger>
-	<logger name="special.StatsLogger">
-      <appender-ref ref="StatsLogFileAppender"/>
-    </logger>
-  </log4net>
-</configuration>
-""")
-        cfgFile.close()
-
     def start(self):
         self.logQueue.put("[MGM] %s user requested to start" % self.name)
-        self.trackStage = "running"
         self.startFailCounter = 0
         self.simStatsCounter = 0
         self.simPhysicsCounter = 0
@@ -474,21 +435,20 @@ class Region:
 
         print "Region %s Starting" % self.name
         namedString = self.startString % self.name
-        self.proc = Popen(namedString.split(" "), cwd=self.startDir, stdout=PIPE, stderr=PIPE)
+        self.proc = Popen(namedString.split(" "), cwd=self.startDir, stdout=DEVNULL, stderr=DEVNULL)
 
         self.workerProcess = RegionWorker(self.jobQueue, self.logQueue)
         self.workerProcess.daemon = True
         self.workerProcess.start()
-        self.loggerProcess = RegionLogger(self.dispatchUrl, self.name, self.proc.stdout, self.proc.stderr, self.logQueue)
+        self.loggerProcess = RegionLogger(self.dispatchUrl, os.path.join(self.startDir, "Halcyon.log"), self.name, self.logQueue)
         self.loggerProcess.daemon = True
         self.loggerProcess.start()
 
     def stop(self):
-        self.trackStage = "stopped"
-        self.stopFailCounter = 0
-        self.startFailCounter = 0
-        self.simStatsCounter = 0
-        self.simPhysicsCounter = 0
+        try:
+            self.proc.kill()
+        except psutil.NoSuchProcess:
+            pass
         self.logQueue.put("[MGM] %s requested Stop" % self.name)
 
     def stopProcess(self):

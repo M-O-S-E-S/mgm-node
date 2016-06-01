@@ -126,25 +126,31 @@ class Slave:
         if action == "add":
             #check if region already present here
             if name in self.registeredRegions:
+                print "Add region %s failed: Region already present on node" % name
                 return json.dumps({ "Success": False, "Message": "Region already exists on this Node"})
             try:
                 port = self.availablePorts.pop(0)
             except Exception, e:
+                print "Add region %s failed: No Available Ports" % name
                 return json.dumps({ "Success": False, "Message": "No slots remaining"})
             self.registeredRegions[name] = {
                 "proc": Region(port["port"],port["console"], name, self.binDir, self.regionDir, self.frontendURI, self.publicAddress),
                 "port": port
             }
+            print "Add region %s succeeded" % name
             return json.dumps({ "Success": True})
         elif action == "remove":
             #find region, and remove if found
             if not name in self.registeredRegions:
+                print "Remove region %s failed: Region not present on node" % name
                 return json.dumps({ "Success": False, "Message": "Region not present"})
             if self.registeredRegions[name]["proc"].isRunning():
+                print "Remove region %s failed: Region is currently running" % name
                 return json.dumps({ "Success": False, "Message": "Region is still running"})
             port = self.registeredRegions[name]["port"]
             del self.registeredRegions[name]
             self.availablePorts.insert(0,port)
+            print "Remove region %s succeeded" % name
             return json.dumps({ "Success": True})
         elif action == "start":
             if not name in self.registeredRegions:

@@ -26,17 +26,11 @@ class RegionLogger( Thread ):
         self.logFile = logFile
         self.shutdown = False
         self.queue = queue
+        open(self.logFile, 'w').close()
 
     def run(self):
-        f = None
+        f = open(self.logFile, 'r')
         try:
-            while f is None:
-                if not os.path.isfile(self.logFile):
-                    print "log file does not exist yet, sleeping and waiting"
-                    time.sleep(5)
-                    continue
-                f = open(self.logFile, 'r')
-
             lines = []
             while not self.shutdown:
 
@@ -50,7 +44,7 @@ class RegionLogger( Thread ):
                     pass
 
                 # read log file
-                while True && len(lines) < 100:
+                while True and len(lines) < 100:
                     line = f.readline()
                     if not line:
                         break
@@ -433,15 +427,16 @@ class Region:
 
         self.logQueue.put("[MGM] %s starting" % self.name)
 
+        self.workerProcess = RegionWorker(self.jobQueue, self.logQueue)
+        self.workerProcess.daemon = True
+        self.loggerProcess = RegionLogger(self.dispatchUrl, os.path.join(self.startDir, "Halcyon.log"), self.name, self.logQueue)
+        self.loggerProcess.daemon = True
+
         print "Region %s Starting" % self.name
         namedString = self.startString % self.name
         self.proc = Popen(namedString.split(" "), cwd=self.startDir, stdout=DEVNULL, stderr=DEVNULL)
 
-        self.workerProcess = RegionWorker(self.jobQueue, self.logQueue)
-        self.workerProcess.daemon = True
         self.workerProcess.start()
-        self.loggerProcess = RegionLogger(self.dispatchUrl, os.path.join(self.startDir, "Halcyon.log"), self.name, self.logQueue)
-        self.loggerProcess.daemon = True
         self.loggerProcess.start()
 
     def stop(self):

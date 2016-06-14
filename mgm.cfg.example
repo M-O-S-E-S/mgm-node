@@ -2,9 +2,11 @@
 ; port this process listens on
 moses_slave_port: 8000
 ; directory containing OpenSim.exe
-opensim_template: /opt/opensim-0.7.6/bin
+opensim_template: /opt/moses/opensim-0.7.6/bin
 ; directory where we can create instances
-region_dir: /home/mheilman/dev/moses/regions
+region_dir: /opt/moses/regions
+; directory where we can stash files
+stash_dir: /opt/moses/stash
 ; mgm connectable address
 mgm_address: xxx.xxx.xxx.xxx
 

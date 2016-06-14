@@ -14,6 +14,7 @@ from os.path import isfile, join
 from Monitor import Monitor as MonitorWrapper
 from cherrypy.process.plugins import Monitor
 import cherrypy
+from cherrypy.lib.static import serve_file
 
 import xml.etree.ElementTree as ET
 
@@ -31,6 +32,7 @@ class Slave:
         self.frontendAddress = conf['webAddress']
         self.binDir = conf['binDir']
         self.regionDir = conf['regionDir']
+        self.stashDir = conf['stashDir']
         self.publicAddress = conf['regionAddress']
         for r,c in zip(conf['regionPorts'],conf['consolePorts']):
             self.availablePorts.append({"port":r,"console":c})
@@ -166,6 +168,57 @@ class Slave:
             return json.dumps({ "Success": False, "Message": "Unsupported Action"})
 
     @cherrypy.expose
+    def upload(self, fileData):
+
+        ip = cherrypy.request.headers["Remote-Addr"]
+        if not ip == self.frontendAddress:
+            print "INFO: Attempted region control from ip %s instead of web frontent" % ip
+            return json.dumps({ "Success": False, "Message": "Denied, this functionality if restricted to the mgm web app"})
+
+        fname = os.path.join(self.stashDir, str(uuid.uuid4()))
+        newFile = open(fname, "wb")
+        while True:
+            data = fileData.file.read(8192)
+            if not data:
+                break
+            newFile.write(data)
+        newFile.close()
+
+        return json.dumps({ "Success": True, "File": fname})
+
+    @cherrypy.expose
+    def download(self, filename):
+
+        ip = cherrypy.request.headers["Remote-Addr"]
+        if not ip == self.frontendAddress:
+            print "INFO: Attempted region control from ip %s instead of web frontent" % ip
+            return json.dumps({ "Success": False, "Message": "Denied, this functionality if restricted to the mgm web app"})
+
+        fname = os.path.join(self.stashDir, filename)
+
+        if not os.path.isfile(fname):
+            raise cherrypy.HTTPError("404 Not Found")
+
+        return serve_file(fname, "application/x-download", "attachment")
+
+    @cherrypy.expose
+    def delete(self, filename):
+
+        ip = cherrypy.request.headers["Remote-Addr"]
+        if not ip == self.frontendAddress:
+            print "INFO: Attempted region control from ip %s instead of web frontent" % ip
+            return json.dumps({ "Success": False, "Message": "Denied, this functionality if restricted to the mgm web app"})
+
+        fname = os.path.join(self.stashDir, filename)
+
+        if not os.path.isfile(fname):
+            raise cherrypy.HTTPError("404 Not Found")
+
+        os.remove(fname)
+        return json.dumps({ "Success": True })
+
+    '''
+    @cherrypy.expose
     def loadIar(self, name, avatarName, avatarPassword, inventoryPath, job):
         #veryify request is coming from the web frontend
         ip = cherrypy.request.headers["Remote-Addr"]
@@ -241,3 +294,4 @@ class Slave:
         if self.registeredRegions[name]["proc"].loadOar(ready, report, merge, x, y, z):
             return json.dumps({ "Success": True})
         return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
+    '''

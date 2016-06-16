@@ -10,7 +10,7 @@ from MgmNode.Slave import Slave
 
 import socket, string
 
-from OpenSSL import crypto, SSL
+#from OpenSSL import crypto, SSL
 
 def modulePath():
     if hasattr(sys,"frozen"):
@@ -67,7 +67,7 @@ def loadConfig(filePath):
 
     return conf
 
-
+'''
 if sys.platform == "win32":
     import win32serviceutil, win32service
     class NodeService(win32serviceutil.ServiceFramework):
@@ -99,6 +99,7 @@ if sys.platform == "win32":
             })
             cherrypy.engine.start()
             cherrypy.engine.block()
+'''
 
 def start():
     conf = loadConfig(os.path.join(modulePath() ,'mgm.cfg'))
@@ -113,6 +114,7 @@ def start():
             'engine.autoreload.on': False,
             'engine.SIGHUP': None,
             'engine.SIGTERM': None,
+            'server.max_request_body_size': 0,  # disable file size limits, dangerous
             #'server.ssl_module': 'pyopenssl',
             #'server.ssl_certificate':conf['certFile'],
             #'server.ssl_private_key':conf['keyFile']
@@ -121,10 +123,10 @@ def start():
     cherrypy.quickstart(app, config={'/': {}})
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1 and sys.argv[1] == "test":
-        start()
-    else:
-        if sys.platform == "win32":
-            win32serviceutil.HandleCommandLine(NodeService)
-        else:
-            start()
+    #if len(sys.argv) > 1 and sys.argv[1] == "test":
+    start()
+    #else:
+    #    if sys.platform == "win32":
+    #        win32serviceutil.HandleCommandLine(NodeService)
+    #    else:
+    #        start()

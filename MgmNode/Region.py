@@ -338,17 +338,17 @@ class Region:
         stats = {}
         stats["timestamp"] = time.time()
         if self.isRunning():
-			#try:
-            stats["uptime"] = time.time() - self.proc.create_time()
-            stats["memPercent"] = self.proc.memory_percent()
-            stats["memKB"] = self.proc.memory_info().rss / 1024
-            stats["cpuPercent"] = self.proc.cpu_percent(0.1)
-            #try:
-            #    r = requests.get("http://127.0.0.1:%d/jsonSimStats" % self.port, timeout=0.5)
-            #    if r.status_code == requests.codes.ok:
-            #        stats["simStats"] = json.loads(r.content)
-            #except:
-            #    pass
+            try:
+                stats["uptime"] = time.time() - self.proc.create_time()
+                stats["memPercent"] = self.proc.memory_percent()
+                stats["memKB"] = self.proc.memory_info().rss / 1024
+                stats["cpuPercent"] = self.proc.cpu_percent(0.1)
+                #try:
+                #    r = requests.get("http://127.0.0.1:%d/jsonSimStats" % self.port, timeout=0.5)
+                #    if r.status_code == requests.codes.ok:
+                #        stats["simStats"] = json.loads(r.content)
+            except:
+                pass
         self.stats =  stats
 
     def writeConfig(self):

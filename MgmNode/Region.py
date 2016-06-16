@@ -348,7 +348,7 @@ class Region:
                 #    if r.status_code == requests.codes.ok:
                 #        stats["simStats"] = json.loads(r.content)
             except:
-                pass
+                stats = {}
         self.stats =  stats
 
     def writeConfig(self):

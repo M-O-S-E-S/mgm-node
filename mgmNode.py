@@ -6,7 +6,7 @@ Created on Sep 22, 2011
 '''
 import sys, os, cherrypy, ConfigParser
 
-from MgmNode.Slave import Slave
+from MgmNode.Node import Node
 
 import socket, string
 
@@ -55,6 +55,8 @@ def loadConfig(filePath):
     #conf['certFile'] = config.get('ssl', 'cert')
     #conf['keyFile'] = config.get('ssl', 'key')
     conf['interval'] = int(config.get('node', 'sample_interval'))
+    conf['consoleUser'] = config.get('halcyon', 'user')
+    conf['consolePass'] = config.get('halcyon', 'pass')
 
     portRange = config.get('node','region_port_range')
     consoleRange = config.get('node','console_port_range')
@@ -103,7 +105,7 @@ if sys.platform == "win32":
 
 def start():
     conf = loadConfig(os.path.join(modulePath() ,'mgm.cfg'))
-    app = Slave(conf)
+    app = Node(conf)
     #if not os.path.isfile(conf['certFile']) or not os.path.isfile(conf['keyFile']):
     #    generateCerts(conf['certFile'], conf['keyFile'])
     cherrypy.config.update({

@@ -1,7 +1,7 @@
 
 import psutil, time, json
 
-class Monitor:
+class HostMonitor:
 
     def __init__(self):
         self.last_time = time.time()

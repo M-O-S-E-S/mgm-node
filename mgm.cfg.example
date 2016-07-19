@@ -24,3 +24,8 @@ sample_interval: 10
 ; locations for ssl certificates.  Self-signed generated if missing.
 cert: my_cert.crt
 key: my_cert.key
+
+[halcyon]
+; local windows user credentials for admin action
+user = 'username'
+pass = 'password'

@@ -26,6 +26,7 @@ cert: my_cert.crt
 key: my_cert.key
 
 [halcyon]
-; local windows user credentials for admin action
-user = 'username'
-pass = 'password'
+; local windows credentials that the process runs under for remote access
+; do not inlcude quotes unless they are part of the username or password
+user = username
+pass = password

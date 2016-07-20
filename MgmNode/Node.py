@@ -7,8 +7,7 @@ Created on Jan 30, 2013
 import cherrypy
 
 from Region import Region
-import threading
-import time, uuid, requests, json
+import time, uuid, requests, json, threading, os, shutil
 from HostMonitor import HostMonitor
 from cherrypy.process.plugins import Monitor
 import cherrypy
@@ -32,16 +31,21 @@ class Node:
         self.stashDir = conf['stashDir']
         self.publicAddress = conf['regionAddress']
         for r,c in zip(conf['regionPorts'],conf['consolePorts']):
-            self.availablePorts.append({"port":r,"console":c})
+            self.availablePorts.append(r)
+
+        self.consoleUser = conf['consoleUser']
+        self.consolePass = conf['consolePass']
 
         #we can't start up without our master config
-        configLoaded = False
-        while not configLoaded:
+        regions = False
+        while not regions:
             try:
-                configLoaded = self.loadRemoteConfig()
+                regions = self.loadRemoteConfig()
             except Exception, e:
                 print "Error contacting MGM: %s" % e
                 time.sleep(30)
+
+        self.initializeRegions(regions)
 
         self.monitor = HostMonitor()
 
@@ -69,11 +73,57 @@ class Node:
 
         if len(result['Regions']) > len(self.availablePorts):
             raise Exception("Error: too many regions for configured ports")
+        return result['Regions']
 
-        for region in result['Regions']:
+    def initializeRegions(self, regions):
+        '''create a Regions process for each assigned region'''
+        #convert regions to a map
+        regs = {}
+        for r in regions:
+            regs[r['uuid']] = r
+        # Reuse assignments already placed on disk
+        assignments = {}
+        for id in os.listdir(self.regionDir):
+            if id not in regs:
+                # we have a region on disk that is not supposed to be ours, kill it and ignore its mapping
+                r = Region(0, id, '', self.binDir, self.regionDir, self.frontendURI, self.publicAddress, self.consoleUser, self.consolePass)
+                if r.isRunning:
+                    r.kill()
+                continue
+            for line in open(os.path.join(self.regionDir, id, 'Halcyon.ini'), 'r'):
+                if "http_listener_port" in line:
+                    assignments[id] = int(line.split('"')[1])
+
+        for id,port in assignments.iteritems():
+            self.availablePorts.remove(port)
+            region = regs[id]
+            del regs[id]
+            self.registeredRegions[id] = Region(
+                port,
+                region['uuid'],
+                region['name'],
+                self.binDir,
+                self.regionDir,
+                self.frontendURI,
+                self.publicAddress,
+                self.consoleUser,
+                self.consolePass)
+        # perform initial assignment
+        for region in regs:
             port = self.availablePorts.pop(0)
-            self.registeredRegions[region['uuid']] = Region(port["port"], region['uuid'], region['name'], self.binDir, self.regionDir, self.frontendURI, self.publicAddress)
-        return True
+            self.registeredRegions[region['uuid']] = Region(
+                port["port"],
+                region['uuid'],
+                region['name'],
+                self.binDir,
+                self.regionDir,
+                self.frontendURI,
+                self.publicAddress,
+                self.consoleUser,
+                self.consolePass)
+
+        # any regions that have recovered set to True will have self-assigned an http port
+
 
 
     def updateStats(self):
@@ -123,7 +173,16 @@ class Node:
         except Exception, e:
             print "Add region %s failed: No Available Ports" % id
             return json.dumps({ "Success": False, "Message": "No slots remaining"})
-        self.registeredRegions[id] = Region(port["port"], id, name, self.binDir, self.regionDir, self.frontendURI, self.publicAddress)
+        self.registeredRegions[id] = Region(
+            port["port"],
+            id,
+            name,
+            self.binDir,
+            self.regionDir,
+            self.frontendURI,
+            self.publicAddress,
+            self.consoleUser,
+            self.consolePass)
         print "Add region %s succeeded" % id
         return json.dumps({ "Success": True})
 
@@ -173,6 +232,18 @@ class Node:
         return json.dumps({ "Success": True})
 
     @cherrypy.expose
+    def kill(self, id):
+        #veryify request is coming from the web frontend
+        ip = cherrypy.request.headers["Remote-Addr"]
+        if not ip == self.frontendAddress:
+            print "INFO: Attempted region control from ip %s instead of web frontent" % ip
+            return json.dumps({ "Success": False, "Message": "Denied, this functionality if restricted to the mgm web app"})
+        if not id in self.registeredRegions:
+            return json.dumps({ "Success": False, "Message": "Region not present"})
+        self.registeredRegions[id].kill()
+        return json.dumps({ "Success": True})
+
+    @cherrypy.expose
     def saveOar(self, id, job):
         #veryify request is coming from the web frontend
         ip = cherrypy.request.headers["Remote-Addr"]
@@ -180,13 +251,13 @@ class Node:
             print "INFO: Attempted region control from ip %s instead of web frontent" % ip
             return "Denied, this functionality if restricted to the mgm web app"
 
-        if not name in self.registeredRegions:
+        if not id in self.registeredRegions:
             return json.dumps({ "Success": False, "Message": "Region not present"})
-        if not self.registeredRegions[name].isRunning:
+        if not self.registeredRegions[id].isRunning:
             return json.dumps({ "Success": False, "Message": "Region must be running to manage oars"})
 
-        report = "http://%s/server/task/report/%s" % (self.frontendURI, job)
-        upload = "http://%s/server/task/upload/%s" % (self.frontendURI, job)
+        report = "http://%s/task/report/%s" % (self.frontendURI, job)
+        upload = "http://%s/task/upload/%s" % (self.frontendURI, job)
         if self.registeredRegions[id].saveOar(report, upload):
             return json.dumps({ "Success": True})
         return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})

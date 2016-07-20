@@ -9,7 +9,7 @@ from Queue import Empty
 from threading import Thread
 from psutil import Popen
 
-from RestConsole import RestConsole
+from RemoteAdmin import RemoteAdmin
 
 # the pit in which to throw normal process output
 DEVNULL = open(os.devnull, 'wb')
@@ -22,15 +22,18 @@ class Region:
     isRunning = False
     shuttingDown = False
 
-    def __init__(self, regionPort, uuid, name, binDir, regionDir, dispatchUrl, externalAddress):
+    def __init__(self, regionPort, uuid, name, binDir, regionDir, dispatchUrl, externalAddress, username, password):
         self.port = regionPort
         self.id = uuid
         self.name = name
         self.externalAddress = externalAddress
         self.dispatchUrl = dispatchUrl
-        self.startString = "Halcyon.exe -name %s"
+        self.startString = "Halcyon.exe -name %s -console rest" % name
+        self.username = username
+        self.password = password
 
         self.startDir = os.path.join(regionDir, self.id)
+        self.pidFile = os.path.join(self.startDir, 'Halcyon.pid')
         if os.name != 'nt':
             self.startString = "mono %s" % self.startString
         else:
@@ -43,7 +46,6 @@ class Region:
         th = threading.Thread(target=self._doTasks)
         th.daemon = True
         th.start()
-        self.jobQueue.put(("_checkBinaries", (binDir,)))
 
         #start process monitoring thread
         th = threading.Thread(target=self._monitorProcess)
@@ -62,12 +64,22 @@ class Region:
         th.daemon = True
         th.start()
 
-    def __del__(self):
-        if self.proc:
+        # attempt process recovery from pidfile
+        if os.path.exists(self.pidFile):
+            pid = int(open(self.pidFile).read())
             try:
-                self.proc.kill()
-            except:
-                pass
+                self.proc = psutil.Process(pid)
+                if not "Halcyon.exe" in self.proc.name():
+                    self.proc = None
+                self.isRunning = self.proc.status() in [psutil.STATUS_RUNNING, psutil.STATUS_SLEEPING, psutil.STATUS_DISK_SLEEP]
+            except psutil.NoSuchProcess:
+                self.isRunning = False
+
+        if not self.isRunning:
+            # dont potentially delete and replace binaries on running processes!
+            self.jobQueue.put(("_checkBinaries", (binDir,)))
+
+    def __del__(self):
         self.shuttingDown = True
 
     def _monitorProcess(self):
@@ -77,10 +89,7 @@ class Region:
                 self.isRunning = False
             else:
                 try:
-                    if self.proc.status() in [psutil.STATUS_RUNNING, psutil.STATUS_SLEEPING, psutil.STATUS_DISK_SLEEP]:
-                        self.isRunning = True
-                    else:
-                        self.isRunning = False
+                    self.isRunning =  self.proc.status() in [psutil.STATUS_RUNNING, psutil.STATUS_SLEEPING, psutil.STATUS_DISK_SLEEP]
                 except psutil.NoSuchProcess:
                     self.isRunning = False
             stats = {}
@@ -113,6 +122,7 @@ class Region:
     def _dispatchLog(self):
         """process log lines and upload to MGM for display"""
         lines = []
+        url = "http://%s/server/dispatch/logs/%s" % (self.dispatchUrl,self.id)
         while not self.shuttingDown:
             try:
                 for i in range(self.logQueue.qsize()):
@@ -122,6 +132,20 @@ class Region:
                         self.logConsumer(line)
             except Empty:
                 pass
+            if len(lines) > 0:
+                try:
+                    req = requests.post(url,data={'log': json.dumps(lines)}, verify=False)
+                except requests.ConnectionError:
+                    print "error uploading logs to master"
+                    time.sleep(1)
+                    continue
+                if not req.status_code == requests.codes.ok:
+                    print "Error sending %s: %s" % (self.region, req.content)
+                else:
+                    #logs uploaded successfully
+                    lines = []
+            else:
+                time.sleep(1)
 
     def _doTasks(self):
         """Process asynchronous lambda tasks from internal queue"""
@@ -206,11 +230,30 @@ class Region:
         f.write(xml)
         f.close()
 
-        namedString = self.startString % self.name
-        self.proc = Popen(namedString.split(" "), cwd=self.startDir, stdout=DEVNULL, stderr=DEVNULL)
+        self.proc = Popen(self.startString.split(" "), cwd=self.startDir, stdout=DEVNULL, stderr=DEVNULL)
+        #write a pidfile
+        f = open(self.pidFile, 'w')
+        f.write(str(self.proc.pid))
+        f.close()
 
     def stop(self):
+        """schedule the process to exit"""
+        self.jobQueue.put(("_stop", ()))
+
+    def _stop(self):
+        #if os.path.exists(self.pidFile):
+        #    os.remove(self.pidFile)
+        radmin = RemoteAdmin("127.0.0.1", self.port, self.username, self.password)
+        if not radmin.connected:
+            print "Cannot shutdown region %s: %s" % (self.uuid, radmin.message)
+            return
+        radmin.shutdown(self.id, 0)
+        radmin.close()
+
+    def kill(self):
         """immediately terminate the process"""
+        if os.path.exists(self.pidFile):
+            os.remove(self.pidFile)
         try:
             self.proc.kill()
         except psutil.NoSuchProcess:
@@ -232,20 +275,67 @@ class Region:
         """perform an oar load"""
         pass
 
-"""
     def saveOar(self, reportUrl, uploadUrl):
+        """schedule an oar save and upload to MGM"""
         try:
-            self.logQueue.put("[MGM] %s requested save oar" % self.name)
-            url = "http://127.0.0.1:" + str(self.console)
-            console = RestConsole(url, self.consoleUser, self.consolePassword)
-            self.jobQueue.put({"name": "save_oar", "reportUrl": reportUrl, "uploadUrl": uploadUrl, "console": console, "region":self.name, "location":self.startDir})
+            self.logQueue.put("[MGM] %s requested save oar\n" % self.name)
+            self.jobQueue.put(("_saveOar", (reportUrl, uploadUrl,)))
         except:
             return False
         return True
 
+    def _saveOar(self, reportUrl, uploadUrl):
+        """perform the actual oar load"""
+        if not self.isRunning:
+            print "Save oar aborted, region is not running"
+            requests.post(reportUrl, data={"Status": "Error: Region is not running"}, verify=False)
+            return
+        oarFile = os.path.join(self.startDir, '%s.oar' % self.name)
+        statusFile = os.path.join(self.startDir, '%s.oarstatus' % self.name)
+        if os.path.exists(oarFile):
+            os.remove(oarFile)
+        if os.path.exists(statusFile):
+            os.remove(statusFile)
+        radmin = RemoteAdmin("127.0.0.1", self.port, self.username, self.password)
+        if not radmin.connected:
+            print "Save oar aborted, could not connect to remote admin"
+            requests.post(reportUrl, data={"Status": "Error: Could not connect to remoteAdmin"}, verify=False)
+            return
+        print "backing up to %s" % oarFile
+        success, msg = radmin.backup(self.name, oarFile, True)
+        if not success:
+            print "Save oar aborted, error: %s" % msg
+            requests.post(reportUrl, data={"Status": "Error: %s" % msg}, verify=False)
+            return
+
+        print "Save oar triggered in region %s" % self.id
+        requests.post(reportUrl, data={"Status": "Saving..."}, verify=False)
+
+        while self.isRunning and not os.path.exists(statusFile):
+            time.sleep(5)
+
+        if not self.isRunning:
+            requests.post(reportUrl, data={"Status": "Error: region halted during save"}, verify=False)
+            return
+
+        # check statusfile
+        print "Save oar complete for region %s" % self.id
+        with open(statusFile, 'rb') as f:
+            data = f.read()
+            if data[0] == '\x01':
+                # success
+                r = requests.post(uploadUrl, data={"Success": True}, files={'file': (self.name, open(oarFile, 'rb'))}, verify=False)
+            else:
+                #failure
+                print "Save oar complete for region %s for unspecified reason" % self.id
+                requests.post(reportUrl, data={"Status": "Error: an unknown error occurred while saving the oar file"}, verify=False)
+
+
+
+"""
     def loadOar(self, ready, report, merge, x, y, z):
         try:
-            self.logQueue.put("[MGM] %s requested load oar" % self.name)
+            self.logQueue.put("[MGM] %s requested load oar\n" % self.name)
             url = "http://127.0.0.1:" + str(self.console)
             console = RestConsole(url, self.consoleUser, self.consolePassword)
             self.jobQueue.put({"name": "load_oar", "ready": ready, "report": report, "console": console, "merge": merge, "x":x, "y":y, "z":z})

@@ -59,7 +59,6 @@ class Region:
         th.start()
 
         #start log dispatch thread
-        self.logConsumer = lambda line: None
         th = threading.Thread(target=self._dispatchLog)
         th.daemon = True
         th.start()
@@ -129,7 +128,6 @@ class Region:
                     line = self.logQueue.get(False)
                     if line:
                         lines.append(line)
-                        self.logConsumer(line)
             except Empty:
                 pass
             if len(lines) > 0:
@@ -149,7 +147,6 @@ class Region:
 
     def _doTasks(self):
         """Process asynchronous lambda tasks from internal queue"""
-        import traceback
         while not self.shuttingDown:
             #block and wait for a new job
             try:
@@ -163,9 +160,6 @@ class Region:
                 getattr(self, functor)(*args)
             except:
                 print "Error processing job %s: %s" % (functor, sys.exc_info())
-                print traceback.format_exc()
-                # reset logConsumer in case it was modified
-                self.logConsumer = lambda line: None
 
     def _checkBinaries(self, binDir):
         """make sure we are ready to start the process when necessary"""
@@ -307,6 +301,7 @@ class Region:
             print "Save oar aborted, error: %s" % msg
             requests.post(reportUrl, data={"Status": "Error: %s" % msg}, verify=False)
             return
+        radmin.close()
 
         print "Save oar triggered in region %s" % self.id
         requests.post(reportUrl, data={"Status": "Saving..."}, verify=False)
@@ -330,17 +325,42 @@ class Region:
                 print "Save oar complete for region %s for unspecified reason" % self.id
                 requests.post(reportUrl, data={"Status": "Error: an unknown error occurred while saving the oar file"}, verify=False)
 
-
-
-"""
-    def loadOar(self, ready, report, merge, x, y, z):
+    def loadOar(self, readyUrl, reportUrl):
+        """schedule an oar download from MGM and load into region"""
         try:
-            self.logQueue.put("[MGM] %s requested load oar\n" % self.name)
-            url = "http://127.0.0.1:" + str(self.console)
-            console = RestConsole(url, self.consoleUser, self.consolePassword)
-            self.jobQueue.put({"name": "load_oar", "ready": ready, "report": report, "console": console, "merge": merge, "x":x, "y":y, "z":z})
+            self.logQueue.put("[MGM] %s requested save oar\n" % self.name)
+            self.jobQueue.put(("_loadOar", (readyUrl, reportUrl,)))
         except:
-            print "exception occurred"
             return False
         return True
-"""
+
+    def _loadOar(self, readyUrl, reportUrl):
+        """ download an oar from MGM and load it into the region"""
+        print "loading an oar file"
+        requests.post(reportUrl, data={"Status": "Loading onto host"}, verify=False)
+        oarFile = os.path.join(self.startDir, '%s.oar' % self.name)
+
+        with open(oarFile, 'wb') as handle:
+            response = requests.get('http://www.example.com/image.jpg', stream=True)
+
+            if not response.ok:
+                requests.post(reportUrl, data={"Status": "Error: Could not download file from MGM"}, verify=False)
+
+            for block in response.iter_content(1024):
+                handle.write(block)
+
+        requests.post(reportUrl, data={"Status": "Loading into the Region"}, verify=False)
+        radmin = RemoteAdmin("127.0.0.1", self.port, self.username, self.password)
+        if not radmin.connected:
+            print "Load oar aborted, could not connect to remote admin"
+            requests.post(reportUrl, data={"Status": "Error: Could not connect to remoteAdmin"}, verify=False)
+            return
+        print "backing up to %s" % oarFile
+        success, msg = radmin.restore(self.name, oarFile, True, True)
+        if not success:
+            print "Load oar aborted, error: %s" % msg
+            requests.post(reportUrl, data={"Status": "Error: %s" % msg}, verify=False)
+            return
+        radmin.close()
+
+        requests.post(reportUrl, data={"Status": "Done"}, verify=False)

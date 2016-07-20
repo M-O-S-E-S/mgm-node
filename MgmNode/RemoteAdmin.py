@@ -39,3 +39,11 @@ class RemoteAdmin:
         if result['Status'] == 'Success':
             return (True, "")
         return (False, result["ErrorDescription"])
+
+    def restore(self, regionName, oarFile, reassignUsers, skipErrors):
+        if not self.connected:
+            return (False, "Not Connected")
+        result = self._server.Region.Restore(self._sessionID, regionName, oarFile, reassignUsers, skipErrors)
+        if result['Status'] == 'Success':
+            return (True, "")
+        return (False, result["ErrorDescription"])

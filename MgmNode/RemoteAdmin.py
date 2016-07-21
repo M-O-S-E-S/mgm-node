@@ -47,3 +47,11 @@ class RemoteAdmin:
         if result['Status'] == 'Success':
             return (True, "")
         return (False, result["ErrorDescription"])
+
+    def command(self, regionName, command):
+        if not self.connected:
+            return (False, "Not Connected")
+        result = self._server.Console.Command(self._sessionID, command)
+        if result['Status'] == 'Success':
+            return (True, "")
+        return (False, result["ErrorDescription"])

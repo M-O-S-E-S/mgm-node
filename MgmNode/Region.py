@@ -364,3 +364,15 @@ class Region:
         radmin.close()
 
         requests.post(reportUrl, data={"Status": "Done"}, verify=False)
+
+    def consoleCmd(self, cmd):
+        """synchronous console command"""
+        print "Executing command: %s" % cmd
+        radmin = RemoteAdmin("127.0.0.1", self.port, self.username, self.password)
+        if not radmin.connected:
+            return False
+        success, msg = radmin.command(self.name, cmd)
+        if not success:
+            return False
+        radmin.close()
+        return True

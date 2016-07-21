@@ -280,3 +280,20 @@ class Node:
         if self.registeredRegions[id].loadOar(ready, report):
             return json.dumps({ "Success": True})
         return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
+
+    @cherrypy.expose
+    def consoleCmd(self, id, cmd):
+        #veryify request is coming from the web frontend
+        ip = cherrypy.request.headers["Remote-Addr"]
+        if not ip == self.frontendAddress:
+            print "INFO: Attempted region control from ip %s instead of web frontent" % ip
+            return "Denied, this functionality if restricted to the mgm web app"
+
+        if not id in self.registeredRegions:
+            return json.dumps({ "Success": False, "Message": "Region not present"})
+        if not self.registeredRegions[id].isRunning:
+            return json.dumps({ "Success": False, "Message": "Region must be running to manage oars"})
+
+        if self.registeredRegions[id].consoleCmd(cmd):
+            return json.dumps({ "Success": True})
+        return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})

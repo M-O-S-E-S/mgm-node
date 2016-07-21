@@ -53,13 +53,7 @@ class Region:
         th.start()
 
         #start log monitoring thread
-        self.logQueue = Queue()
         th = threading.Thread(target=self._monitorLog)
-        th.daemon = True
-        th.start()
-
-        #start log dispatch thread
-        th = threading.Thread(target=self._dispatchLog)
         th.daemon = True
         th.start()
 
@@ -110,40 +104,31 @@ class Region:
             time.sleep(5)
         f = open(self.logFile, 'r')
         f.seek(0,2)
-        while not self.shuttingDown:
-            line = f.readline()
-            if not line:
-                time.sleep(5)
-                continue
-            self.logQueue.put(line)
-        f.close()
-
-    def _dispatchLog(self):
-        """process log lines and upload to MGM for display"""
         lines = []
         url = "http://%s/server/dispatch/logs/%s" % (self.dispatchUrl,self.id)
         while not self.shuttingDown:
-            try:
-                for i in range(self.logQueue.qsize()):
-                    line = self.logQueue.get(False)
-                    if line:
-                        lines.append(line)
-            except Empty:
-                pass
-            if len(lines) > 0:
+            line = f.readline()
+            if line:
+                lines.append(line)
+                continue
+            else:
+                if len(lines) == 0:
+                    time.sleep(5)
+                    continue
+
                 try:
                     req = requests.post(url,data={'log': json.dumps(lines)}, verify=False)
+                    if not req.status_code == requests.codes.ok:
+                        print "Error sending %s: %s" % (self.region, req.content)
+                    else:
+                        #logs uploaded successfully
+                        lines = []
                 except requests.ConnectionError:
                     print "error uploading logs to master"
-                    time.sleep(1)
+                    time.sleep(5)
                     continue
-                if not req.status_code == requests.codes.ok:
-                    print "Error sending %s: %s" % (self.region, req.content)
-                else:
-                    #logs uploaded successfully
-                    lines = []
-            else:
-                time.sleep(1)
+
+        f.close()
 
     def _doTasks(self):
         """Process asynchronous lambda tasks from internal queue"""
@@ -272,7 +257,6 @@ class Region:
     def saveOar(self, reportUrl, uploadUrl):
         """schedule an oar save and upload to MGM"""
         try:
-            self.logQueue.put("[MGM] %s requested save oar\n" % self.name)
             self.jobQueue.put(("_saveOar", (reportUrl, uploadUrl,)))
         except:
             return False
@@ -297,11 +281,11 @@ class Region:
             return
         print "backing up to %s" % oarFile
         success, msg = radmin.backup(self.name, oarFile, True)
+        radmin.close()
         if not success:
             print "Save oar aborted, error: %s" % msg
             requests.post(reportUrl, data={"Status": "Error: %s" % msg}, verify=False)
             return
-        radmin.close()
 
         print "Save oar triggered in region %s" % self.id
         requests.post(reportUrl, data={"Status": "Saving..."}, verify=False)
@@ -328,7 +312,6 @@ class Region:
     def loadOar(self, readyUrl, reportUrl):
         """schedule an oar download from MGM and load into region"""
         try:
-            self.logQueue.put("[MGM] %s requested save oar\n" % self.name)
             self.jobQueue.put(("_loadOar", (readyUrl, reportUrl,)))
         except:
             return False
@@ -357,11 +340,11 @@ class Region:
             return
         print "backing up to %s" % oarFile
         success, msg = radmin.restore(self.name, oarFile, True, True)
+        radmin.close()
         if not success:
             print "Load oar aborted, error: %s" % msg
             requests.post(reportUrl, data={"Status": "Error: %s" % msg}, verify=False)
             return
-        radmin.close()
 
         requests.post(reportUrl, data={"Status": "Done"}, verify=False)
 
@@ -372,7 +355,7 @@ class Region:
         if not radmin.connected:
             return False
         success, msg = radmin.command(self.name, cmd)
+        radmin.close()
         if not success:
             return False
-        radmin.close()
         return True

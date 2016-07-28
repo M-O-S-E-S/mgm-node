@@ -90,9 +90,9 @@ class Region:
             if self.isRunning:
                 try:
                     stats["uptime"] = time.time() - self.proc.create_time()
-                    stats["memPercent"] = self.proc.memory_percent()
-                    stats["memKB"] = self.proc.memory_info().rss / 1024
-                    stats["cpuPercent"] = self.proc.cpu_percent(0.1)
+                    stats["memPercent"] = self.proc.memory_percent(memtype="uss")
+                    stats["memKB"] = self.proc.memory_full_info().uss / 1024
+                    stats["cpuPercent"] = self.proc.cpu_percent(interval=None)
                 except:
                     stats = {}
             self.stats =  stats
@@ -271,8 +271,10 @@ class Region:
         oarFile = os.path.join(self.startDir, '%s.oar' % self.name)
         statusFile = os.path.join(self.startDir, '%s.oarstatus' % self.name)
         if os.path.exists(oarFile):
+            print "Removing existing oarfile %s" % oarFile
             os.remove(oarFile)
         if os.path.exists(statusFile):
+            print "Removing existing statusFile %s" % statusFile
             os.remove(statusFile)
         radmin = RemoteAdmin("127.0.0.1", self.port, self.username, self.password)
         if not radmin.connected:
@@ -303,10 +305,11 @@ class Region:
             data = f.read()
             if data[0] == '\x01':
                 # success
+                print "Save oar for region %s succeeded" % self.id
                 r = requests.post(uploadUrl, data={"Success": True}, files={'file': (self.name, open(oarFile, 'rb'))}, verify=False)
             else:
                 #failure
-                print "Save oar complete for region %s for unspecified reason" % self.id
+                print "Save oar for region %s failed for unspecified reason" % self.id
                 requests.post(reportUrl, data={"Status": "Error: an unknown error occurred while saving the oar file"}, verify=False)
 
     def loadOar(self, readyUrl, reportUrl):
@@ -319,17 +322,18 @@ class Region:
 
     def _loadOar(self, readyUrl, reportUrl):
         """ download an oar from MGM and load it into the region"""
-        print "loading an oar file"
+        print "loading an oar file from %s" % readyUrl
         requests.post(reportUrl, data={"Status": "Loading onto host"}, verify=False)
         oarFile = os.path.join(self.startDir, '%s.oar' % self.name)
 
+        response = requests.get(readyUrl, stream=True)
+        if not response.ok:
+            requests.post(reportUrl, data={"Status": "Error: Could not download file from MGM"}, verify=False)
+            print "Error loading OAR file from MGM"
+            return
+
         with open(oarFile, 'wb') as handle:
-            response = requests.get('http://www.example.com/image.jpg', stream=True)
-
-            if not response.ok:
-                requests.post(reportUrl, data={"Status": "Error: Could not download file from MGM"}, verify=False)
-
-            for block in response.iter_content(1024):
+            for block in response.iter_content(chunk_size=1024):
                 handle.write(block)
 
         requests.post(reportUrl, data={"Status": "Loading into the Region"}, verify=False)
@@ -338,7 +342,7 @@ class Region:
             print "Load oar aborted, could not connect to remote admin"
             requests.post(reportUrl, data={"Status": "Error: Could not connect to remoteAdmin"}, verify=False)
             return
-        print "backing up to %s" % oarFile
+        print "Triggering restore of file %s" % oarFile
         success, msg = radmin.restore(self.name, oarFile, True, True)
         radmin.close()
         if not success:

@@ -37,10 +37,11 @@ class Node:
         self.consolePass = conf['consolePass']
 
         #we can't start up without our master config
-        regions = False
-        while not regions:
+        success = False
+        regions = []
+        while not success:
             try:
-                regions = self.loadRemoteConfig()
+                success, regions = self.loadRemoteConfig()
             except Exception, e:
                 print "Error contacting MGM: %s" % e
                 time.sleep(30)
@@ -60,6 +61,7 @@ class Node:
         self.registeredRegions.clear()
 
     def loadRemoteConfig(self):
+        print "loading config from MGM"
         #load additional config from master service
         url = "http://%s/server/dispatch/node" % (self.frontendURI)
         r = requests.post(url, data={'host':self.host, 'port':self.nodePort, 'key':self.key, 'slots': len(self.availablePorts)}, verify=False)
@@ -73,7 +75,7 @@ class Node:
 
         if len(result['Regions']) > len(self.availablePorts):
             raise Exception("Error: too many regions for configured ports")
-        return result['Regions']
+        return True, result['Regions']
 
     def initializeRegions(self, regions):
         '''create a Regions process for each assigned region'''
@@ -174,7 +176,7 @@ class Node:
             print "Add region %s failed: No Available Ports" % id
             return json.dumps({ "Success": False, "Message": "No slots remaining"})
         self.registeredRegions[id] = Region(
-            port["port"],
+            port,
             id,
             name,
             self.binDir,
@@ -201,7 +203,7 @@ class Node:
         if self.registeredRegions[id].isRunning:
             print "Remove region %s failed: Region is currently running" % id
             return json.dumps({ "Success": False, "Message": "Region is still running"})
-        port = self.registeredRegions[id]["port"]
+        port = self.registeredRegions[id].port
         del self.registeredRegions[id]
         self.availablePorts.insert(0,port)
         print "Remove region %s succeeded" % id

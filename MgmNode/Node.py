@@ -114,7 +114,7 @@ class Node:
         for region in regs:
             port = self.availablePorts.pop(0)
             self.registeredRegions[region['uuid']] = Region(
-                port["port"],
+                port,
                 region['uuid'],
                 region['name'],
                 self.binDir,

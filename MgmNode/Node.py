@@ -110,8 +110,9 @@ class Node:
                 self.publicAddress,
                 self.consoleUser,
                 self.consolePass)
-        # perform initial assignment
-        for region in regs:
+        # assign remaining regions
+        for id in regs:
+            region = regs[id]
             port = self.availablePorts.pop(0)
             self.registeredRegions[region['uuid']] = Region(
                 port,
@@ -123,10 +124,6 @@ class Node:
                 self.publicAddress,
                 self.consoleUser,
                 self.consolePass)
-
-        # any regions that have recovered set to True will have self-assigned an http port
-
-
 
     def updateStats(self):
         self.monitor.updateStatistics()

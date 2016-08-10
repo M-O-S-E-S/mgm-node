@@ -4,8 +4,7 @@ Created on Feb 1, 2013
 @author: mheilman
 '''
 import os, psutil, json, time, requests, threading, re, shutil, sys
-from multiprocessing import Process, Queue
-from Queue import Empty
+from Queue import Queue, Empty
 from threading import Thread
 from psutil import Popen
 

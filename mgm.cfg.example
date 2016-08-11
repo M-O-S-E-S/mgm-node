@@ -9,6 +9,7 @@ region_dir: /opt/moses/regions
 stash_dir: /opt/moses/stash
 ; mgm connectable address
 mgm_address: xxx.xxx.xxx.xxx
+mgm_port: 3000
 
 ; range of ports for region tcp/udp
 region_port_range: 9000-9029

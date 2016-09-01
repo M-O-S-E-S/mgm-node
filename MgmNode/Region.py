@@ -58,13 +58,13 @@ class Region:
 
         # attempt process recovery from pidfile
         if os.path.exists(self.pidFile):
-            pid = int(open(self.pidFile).read())
             try:
+                pid = int(open(self.pidFile).read())
                 self.proc = psutil.Process(pid)
                 if not "Halcyon.exe" in self.proc.name():
                     self.proc = None
                 self.isRunning = self.proc.status() in [psutil.STATUS_RUNNING, psutil.STATUS_SLEEPING, psutil.STATUS_DISK_SLEEP]
-            except psutil.NoSuchProcess:
+            except:
                 self.isRunning = False
 
         if not self.isRunning:

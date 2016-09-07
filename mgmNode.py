@@ -6,7 +6,7 @@ Created on Sep 22, 2011
 '''
 import sys, os, cherrypy, ConfigParser
 
-from MgmNode.Node import Node
+from Node import Node
 
 import socket, string
 
@@ -49,7 +49,6 @@ def loadConfig(filePath):
     conf['regionAddress'] = config.get('node','region_external_address')
     conf['binDir'] = config.get('node','opensim_template')
     conf['regionDir'] = config.get('node','region_dir')
-    conf['stashDir'] = config.get('node','stash_dir')
     conf['webAddress'] = config.get('node', 'mgm_address')
     conf['webPort'] = config.get('node', 'mgm_port')
     #conf['certFile'] = config.get('ssl', 'cert')

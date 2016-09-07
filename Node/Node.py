@@ -28,7 +28,6 @@ class Node:
         self.frontendAddress = conf['webAddress']
         self.binDir = conf['binDir']
         self.regionDir = conf['regionDir']
-        self.stashDir = conf['stashDir']
         self.publicAddress = conf['regionAddress']
         for r,c in zip(conf['regionPorts'],conf['consolePorts']):
             self.availablePorts.append(r)

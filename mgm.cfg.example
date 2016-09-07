@@ -5,8 +5,6 @@ moses_slave_port: 8000
 opensim_template: /opt/moses/opensim-0.7.6/bin
 ; directory where we can create instances
 region_dir: /opt/moses/regions
-; directory where we can stash files
-stash_dir: /opt/moses/stash
 ; mgm connectable address
 mgm_address: xxx.xxx.xxx.xxx
 mgm_port: 3000

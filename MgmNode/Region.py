@@ -275,7 +275,21 @@ class Region:
         print "Save oar triggered in region %s" % self.id
         requests.post(reportUrl, data={"Status": "Saving..."}, verify=False)
 
+        #wait for statusfile to be written on completion
         while self.isRunning and not os.path.exists(statusFile):
+            time.sleep(5)
+
+        def is_open(file_name):
+            if os.path.exists(file_name):
+                try:
+                    os.rename(file_name,file_name)
+                    return False
+                except:
+                    return True
+            raise NameError
+
+        #wait for process to close the archive
+        while self.isRunning and is_open(oarFile):
             time.sleep(5)
 
         if not self.isRunning:

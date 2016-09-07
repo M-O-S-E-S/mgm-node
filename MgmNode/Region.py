@@ -237,22 +237,6 @@ class Region:
         except psutil.NoSuchProcess:
             pass
 
-    def saveOar(self, report, upload):
-        """request that an oar file be saved from this process"""
-        pass
-
-    def _saveOar(self):
-        """perform an oar save"""
-        pass
-
-    def loadOar(self, report, download):
-        """request that an oar file be loaded into this process"""
-        pass
-
-    def _loadOar(self):
-        """perform an oar load"""
-        pass
-
     def saveOar(self, reportUrl, uploadUrl):
         """schedule an oar save and upload to MGM"""
         try:

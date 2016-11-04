@@ -62,7 +62,7 @@ class Node:
     def loadRemoteConfig(self):
         print "loading config from MGM"
         #load additional config from master service
-        url = "http://%s/server/dispatch/node" % (self.frontendURI)
+        url = "http://%s/dispatch/node" % (self.frontendURI)
         r = requests.post(url, data={'host':self.host, 'port':self.nodePort, 'key':self.key, 'slots': len(self.availablePorts)}, verify=False)
         if not r.status_code == requests.codes.ok:
             raise Exception("Error contacting MGM at %s" % url)
@@ -137,7 +137,7 @@ class Node:
             p['stats'] = region.stats
             stats['processes'].append(p)
 
-        url = "http://%s/server/dispatch/stats/%s" % (self.frontendURI, self.host)
+        url = "http://%s/dispatch/stats/%s" % (self.frontendURI, self.host)
         try:
             r = requests.post(url, data={"json": json.dumps(stats)}, verify=False)
         except requests.ConnectionError:

@@ -13,7 +13,7 @@ class HostMonitor:
         stats = {}
         hostMem = psutil.virtual_memory()
         stats["memPercent"] = hostMem.percent
-        stats["memKB"] = hostMem.used / 1024
+        stats["memKB"] = hostMem.used
 
         stats["cpuPercent"] = psutil.cpu_percent(interval=0, percpu=1)
 

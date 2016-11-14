@@ -91,9 +91,11 @@ class Node:
                 if r.isRunning:
                     r.kill()
                 continue
-            for line in open(os.path.join(self.regionDir, id, 'Halcyon.ini'), 'r'):
-                if "http_listener_port" in line:
-                    assignments[id] = int(line.split('"')[1])
+            halcyonFile = os.path.join(self.regionDir, id, 'Halcyon.ini')
+            if os.path.isfile(halcyonFile):
+                for line in open(halcyonFile, 'r'):
+                    if "http_listener_port" in line:
+                        assignments[id] = int(line.split('"')[1])
 
         for id,port in assignments.iteritems():
             self.availablePorts.remove(port)
@@ -133,7 +135,7 @@ class Node:
         for id,region in self.registeredRegions.iteritems():
             p = {}
             p['id'] = id
-            p['running'] = str(region.isRunning)
+            p['running'] = region.isRunning
             p['stats'] = region.stats
             stats['processes'].append(p)
 

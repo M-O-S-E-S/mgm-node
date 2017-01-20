@@ -162,7 +162,7 @@ class Node:
         ip = cherrypy.request.headers["Remote-Addr"]
         if not ip == self.frontendAddress:
             print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-            return json.dumps({ "Success": False, "Message": "Denied, this functionality if restricted to the mgm web app"})
+            return json.dumps({ "Success": False, "Message": "Denied, this functionality is restricted to the mgm web app"})
 
         #check if region already present here
         if id in self.registeredRegions:
@@ -192,7 +192,7 @@ class Node:
         ip = cherrypy.request.headers["Remote-Addr"]
         if not ip == self.frontendAddress:
             print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-            return json.dumps({ "Success": False, "Message": "Denied, this functionality if restricted to the mgm web app"})
+            return json.dumps({ "Success": False, "Message": "Denied, this functionality is restricted to the mgm web app"})
 
         #find region, and remove if found
         if not id in self.registeredRegions:
@@ -213,7 +213,7 @@ class Node:
         ip = cherrypy.request.headers["Remote-Addr"]
         if not ip == self.frontendAddress:
             print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-            return json.dumps({ "Success": False, "Message": "Denied, this functionality if restricted to the mgm web app"})
+            return json.dumps({ "Success": False, "Message": "Denied, this functionality is restricted to the mgm web app"})
         if not id in self.registeredRegions:
             return json.dumps({ "Success": False, "Message": "Region not present"})
         self.registeredRegions[id].start()
@@ -225,7 +225,7 @@ class Node:
         ip = cherrypy.request.headers["Remote-Addr"]
         if not ip == self.frontendAddress:
             print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-            return json.dumps({ "Success": False, "Message": "Denied, this functionality if restricted to the mgm web app"})
+            return json.dumps({ "Success": False, "Message": "Denied, this functionality is restricted to the mgm web app"})
         if not id in self.registeredRegions:
             return json.dumps({ "Success": False, "Message": "Region not present"})
         self.registeredRegions[id].stop()
@@ -237,7 +237,7 @@ class Node:
         ip = cherrypy.request.headers["Remote-Addr"]
         if not ip == self.frontendAddress:
             print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-            return json.dumps({ "Success": False, "Message": "Denied, this functionality if restricted to the mgm web app"})
+            return json.dumps({ "Success": False, "Message": "Denied, this functionality is restricted to the mgm web app"})
         if not id in self.registeredRegions:
             return json.dumps({ "Success": False, "Message": "Region not present"})
         self.registeredRegions[id].kill()
@@ -249,7 +249,7 @@ class Node:
         ip = cherrypy.request.headers["Remote-Addr"]
         if not ip == self.frontendAddress:
             print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-            return "Denied, this functionality if restricted to the mgm web app"
+            return "Denied, this functionality is restricted to the mgm web app"
 
         if not id in self.registeredRegions:
             return json.dumps({ "Success": False, "Message": "Region not present"})
@@ -268,7 +268,7 @@ class Node:
         ip = cherrypy.request.headers["Remote-Addr"]
         if not ip == self.frontendAddress:
             print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-            return "Denied, this functionality if restricted to the mgm web app"
+            return "Denied, this functionality is restricted to the mgm web app"
 
         if not id in self.registeredRegions:
             return json.dumps({ "Success": False, "Message": "Region not present"})
@@ -287,7 +287,7 @@ class Node:
         ip = cherrypy.request.headers["Remote-Addr"]
         if not ip == self.frontendAddress:
             print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-            return "Denied, this functionality if restricted to the mgm web app"
+            return "Denied, this functionality is restricted to the mgm web app"
 
         if not id in self.registeredRegions:
             return json.dumps({ "Success": False, "Message": "Region not present"})

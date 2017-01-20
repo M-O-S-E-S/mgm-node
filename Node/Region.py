@@ -104,7 +104,7 @@ class Region:
         f = open(self.logFile, 'r')
         f.seek(0,2)
         lines = []
-        url = "http://%s/dispatch/logs/%s" % (self.dispatchUrl,self.id)
+        url = "http://%s/server/dispatch/logs/%s" % (self.dispatchUrl,self.id)
         while not self.shuttingDown:
             line = f.readline()
             if line:
@@ -166,7 +166,7 @@ class Region:
             return
 
         # write the Halcyon.ini config file
-        r = requests.get("http://%s/dispatch/process/%s?httpPort=%s&externalAddress=%s" % (self.dispatchUrl, self.id, self.port, self.externalAddress))
+        r = requests.get("http://%s/server/dispatch/process/%s?httpPort=%s&externalAddress=%s" % (self.dispatchUrl, self.id, self.port, self.externalAddress))
         if r.status_code != requests.codes.ok:
             print "Region %s failed to start, failed getting ini values from MGM"
             return
@@ -180,7 +180,7 @@ class Region:
         f.close()
 
         # write the Regions.cfg file
-        r = requests.get("http://%s/dispatch/region/%s" % (self.dispatchUrl, self.id))
+        r = requests.get("http://%s/server/dispatch/region/%s" % (self.dispatchUrl, self.id))
         if r.status_code != requests.codes.ok:
             print "Region %s failed to start, failed getting region values from MGM"
             return

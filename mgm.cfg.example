@@ -2,11 +2,12 @@
 ; port this process listens on
 moses_slave_port: 8000
 ; directory containing OpenSim.exe
-opensim_template: /opt/opensim-0.7.6/bin
+opensim_template: /opt/moses/opensim-0.7.6/bin
 ; directory where we can create instances
-region_dir: /home/mheilman/dev/moses/regions
+region_dir: /opt/moses/regions
 ; mgm connectable address
 mgm_address: xxx.xxx.xxx.xxx
+mgm_port: 3000
 
 ; range of ports for region tcp/udp
 region_port_range: 9000-9029
@@ -22,3 +23,9 @@ sample_interval: 10
 ; locations for ssl certificates.  Self-signed generated if missing.
 cert: my_cert.crt
 key: my_cert.key
+
+[halcyon]
+; local windows credentials that the process runs under for remote access
+; do not inlcude quotes unless they are part of the username or password
+user = username
+pass = password

@@ -62,7 +62,7 @@ class Node:
     def loadRemoteConfig(self):
         print "loading config from MGM"
         #load additional config from master service
-        url = "http://%s/dispatch/node" % (self.frontendURI)
+        url = "http://%s/node" % (self.frontendURI)
         r = requests.post(url, data={'host':self.host, 'port':self.nodePort, 'key':self.key, 'slots': len(self.availablePorts)}, verify=False)
         if not r.status_code == requests.codes.ok:
             raise Exception("Error contacting MGM at %s" % url)
@@ -139,7 +139,7 @@ class Node:
             p['stats'] = region.stats
             stats['processes'].append(p)
 
-        url = "http://%s/dispatch/stats/%s" % (self.frontendURI, self.host)
+        url = "http://%s/stats" % (self.frontendURI)
         try:
             r = requests.post(url, data={"json": json.dumps(stats)}, verify=False)
         except requests.ConnectionError:
@@ -256,8 +256,8 @@ class Node:
         if not self.registeredRegions[id].isRunning:
             return json.dumps({ "Success": False, "Message": "Region must be running to manage oars"})
 
-        report = "http://%s/task/report/%s" % (self.frontendURI, job)
-        upload = "http://%s/task/upload/%s" % (self.frontendURI, job)
+        report = "http://%s/report/%s" % (self.frontendURI, job)
+        upload = "http://%s/upload/%s" % (self.frontendURI, job)
         if self.registeredRegions[id].saveOar(report, upload):
             return json.dumps({ "Success": True})
         return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
@@ -275,8 +275,8 @@ class Node:
         if not self.registeredRegions[id].isRunning:
             return json.dumps({ "Success": False, "Message": "Region must be running to manage oars"})
 
-        ready = "http://%s/task/ready/%s" % (self.frontendURI, job)
-        report = "http://%s/task/report/%s" % (self.frontendURI, job)
+        ready = "http://%s/ready/%s" % (self.frontendURI, job)
+        report = "http://%s/report/%s" % (self.frontendURI, job)
         if self.registeredRegions[id].loadOar(ready, report):
             return json.dumps({ "Success": True})
         return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})

@@ -54,8 +54,6 @@ def loadConfig(filePath):
     #conf['certFile'] = config.get('ssl', 'cert')
     #conf['keyFile'] = config.get('ssl', 'key')
     conf['interval'] = int(config.get('node', 'sample_interval'))
-    conf['consoleUser'] = config.get('halcyon', 'user')
-    conf['consolePass'] = config.get('halcyon', 'pass')
 
     portRange = config.get('node','region_port_range')
     consoleRange = config.get('node','console_port_range')

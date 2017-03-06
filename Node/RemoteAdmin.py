@@ -8,11 +8,11 @@ class RemoteAdmin:
     connected = False
     message = ""
 
-    def __init__(self, address, port, username, password):
+    def __init__(self, address, port, token):
         url = 'http://%s:%s/xmlrpc/RemoteAdmin/' % (address, port);
         self._server = xmlrpclib.ServerProxy(url) #verbose=True
 
-        result =  self._server.session.login_with_password(username, password)
+        result =  self._server.session.login_with_token(token)
         if result['Status'] == 'Failure':
             self.message = result['ErrorDescription']
             return

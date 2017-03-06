@@ -32,9 +32,6 @@ class Node:
         for r,c in zip(conf['regionPorts'],conf['consolePorts']):
             self.availablePorts.append(r)
 
-        self.consoleUser = conf['consoleUser']
-        self.consolePass = conf['consolePass']
-
         #we can't start up without our master config
         success = False
         regions = []
@@ -87,7 +84,7 @@ class Node:
         for id in os.listdir(self.regionDir):
             if id not in regs:
                 # we have a region on disk that is not supposed to be ours, kill it and ignore its mapping
-                r = Region(0, id, '', self.binDir, self.regionDir, self.frontendURI, self.publicAddress, self.consoleUser, self.consolePass)
+                r = Region(0, id, '', self.binDir, self.regionDir, self.frontendURI, self.publicAddress)
                 if r.isRunning:
                     r.kill()
                 continue
@@ -108,9 +105,7 @@ class Node:
                 self.binDir,
                 self.regionDir,
                 self.frontendURI,
-                self.publicAddress,
-                self.consoleUser,
-                self.consolePass)
+                self.publicAddress)
         # assign remaining regions
         for id in regs:
             region = regs[id]
@@ -122,9 +117,7 @@ class Node:
                 self.binDir,
                 self.regionDir,
                 self.frontendURI,
-                self.publicAddress,
-                self.consoleUser,
-                self.consolePass)
+                self.publicAddress)
 
     def updateStats(self):
         self.monitor.updateStatistics()
@@ -180,9 +173,7 @@ class Node:
             self.binDir,
             self.regionDir,
             self.frontendURI,
-            self.publicAddress,
-            self.consoleUser,
-            self.consolePass)
+            self.publicAddress)
         print "Add region %s succeeded" % id
         return json.dumps({ "Success": True})
 
@@ -219,17 +210,18 @@ class Node:
         self.registeredRegions[id].start()
         return json.dumps({ "Success": True})
 
-    @cherrypy.expose
-    def stop(self, id):
-        #veryify request is coming from the web frontend
-        ip = cherrypy.request.headers["Remote-Addr"]
-        if not ip == self.frontendAddress:
-            print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-            return json.dumps({ "Success": False, "Message": "Denied, this functionality is restricted to the mgm web app"})
-        if not id in self.registeredRegions:
-            return json.dumps({ "Success": False, "Message": "Region not present"})
-        self.registeredRegions[id].stop()
-        return json.dumps({ "Success": True})
+    # MGMNode accesses RemoteAdmin its-self
+    #@cherrypy.expose
+    #def stop(self, id, token):
+    #    #veryify request is coming from the web frontend
+    #    ip = cherrypy.request.headers["Remote-Addr"]
+    #    if not ip == self.frontendAddress:
+    #        print "INFO: Attempted region control from ip %s instead of web frontent" % ip
+    #        return json.dumps({ "Success": False, "Message": "Denied, this functionality is restricted to the mgm web app"})
+    #    if not id in self.registeredRegions:
+    #        return json.dumps({ "Success": False, "Message": "Region not present"})
+    #    self.registeredRegions[id].stop(token)
+    #    return json.dumps({ "Success": True})
 
     @cherrypy.expose
     def kill(self, id):

@@ -7,7 +7,7 @@ opensim_template: /opt/moses/opensim-0.7.6/bin
 region_dir: /opt/moses/regions
 ; mgm connectable address
 mgm_address: xxx.xxx.xxx.xxx
-mgm_port: 3000
+mgm_port: 3001
 
 ; range of ports for region tcp/udp
 region_port_range: 9000-9029
@@ -23,9 +23,3 @@ sample_interval: 10
 ; locations for ssl certificates.  Self-signed generated if missing.
 cert: my_cert.crt
 key: my_cert.key
-
-[halcyon]
-; local windows credentials that the process runs under for remote access
-; do not inlcude quotes unless they are part of the username or password
-user = username
-pass = password

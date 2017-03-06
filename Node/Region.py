@@ -21,15 +21,13 @@ class Region:
     isRunning = False
     shuttingDown = False
 
-    def __init__(self, regionPort, uuid, name, binDir, regionDir, dispatchUrl, externalAddress, username, password):
+    def __init__(self, regionPort, uuid, name, binDir, regionDir, dispatchUrl, externalAddress):
         self.port = regionPort
         self.id = uuid
         self.name = name
         self.externalAddress = externalAddress
         self.dispatchUrl = dispatchUrl
         self.startString = "Halcyon.exe -name %s -console rest" % name
-        self.username = username
-        self.password = password
 
         self.startDir = os.path.join(regionDir, self.id)
         self.pidFile = os.path.join(self.startDir, 'Halcyon.pid')
@@ -214,14 +212,14 @@ class Region:
         f.write(str(self.proc.pid))
         f.close()
 
-    def stop(self):
+    def stop(self, token):
         """schedule the process to exit"""
-        self.jobQueue.put(("_stop", ()))
+        self.jobQueue.put(("_stop", (token,)))
 
-    def _stop(self):
+    def _stop(self, token):
         #if os.path.exists(self.pidFile):
         #    os.remove(self.pidFile)
-        radmin = RemoteAdmin("127.0.0.1", self.port, self.username, self.password)
+        radmin = RemoteAdmin("127.0.0.1", self.port, token)
         if not radmin.connected:
             print "Cannot shutdown region %s: %s" % (self.uuid, radmin.message)
             return

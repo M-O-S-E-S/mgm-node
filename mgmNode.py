@@ -114,6 +114,7 @@ def start():
             'engine.SIGHUP': None,
             'engine.SIGTERM': None,
             'server.max_request_body_size': 0,  # disable file size limits, dangerous
+	    'server.socket_timeout': 60,
             #'server.ssl_module': 'pyopenssl',
             #'server.ssl_certificate':conf['certFile'],
             #'server.ssl_private_key':conf['keyFile']

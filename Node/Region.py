@@ -3,12 +3,10 @@ Created on Feb 1, 2013
 
 @author: mheilman
 '''
-import os, psutil, json, time, requests, threading, re, shutil, sys
+import os, psutil, json, time, requests, threading, re, shutil, sys, io
 from Queue import Queue, Empty
 from threading import Thread
 from psutil import Popen
-
-from RemoteAdmin import RemoteAdmin
 
 # the pit in which to throw normal process output
 DEVNULL = open(os.devnull, 'wb')
@@ -275,54 +273,13 @@ class Region:
                 print "Save oar for region %s failed for unspecified reason" % self.id
                 requests.post(reportUrl, data={"Status": "Error: an unknown error occurred while saving the oar file"}, verify=False)
 
-    def loadOar(self, readyUrl, reportUrl):
+    def loadOar(self, readyUrl, reportUrl, oarFile):
         """schedule an oar download from MGM and load into region"""
         try:
-            self.jobQueue.put(("_loadOar", (readyUrl, reportUrl,)))
+            data = oarFile.file.read()
+            fp = open(os.path.join(self.startDir, '%s.oar' % self.name), 'wb')
+            fp.write(data)
+            fp.close()
         except:
-            return False
-        return True
-
-    def _loadOar(self, readyUrl, reportUrl):
-        """ download an oar from MGM and load it into the region"""
-        print "loading an oar file from %s" % readyUrl
-        requests.post(reportUrl, data={"Status": "Loading onto host"}, verify=False)
-        oarFile = os.path.join(self.startDir, '%s.oar' % self.name)
-
-        response = requests.get(readyUrl, stream=True)
-        if not response.ok:
-            requests.post(reportUrl, data={"Status": "Error: Could not download file from MGM"}, verify=False)
-            print "Error loading OAR file from MGM"
-            return
-
-        with open(oarFile, 'wb') as handle:
-            for block in response.iter_content(chunk_size=1024):
-                handle.write(block)
-
-        requests.post(reportUrl, data={"Status": "Loading into the Region"}, verify=False)
-        radmin = RemoteAdmin("127.0.0.1", self.port, self.username, self.password)
-        if not radmin.connected:
-            print "Load oar aborted, could not connect to remote admin"
-            requests.post(reportUrl, data={"Status": "Error: Could not connect to remoteAdmin"}, verify=False)
-            return
-        print "Triggering restore of file %s" % oarFile
-        success, msg = radmin.restore(self.name, oarFile, True, True)
-        radmin.close()
-        if not success:
-            print "Load oar aborted, error: %s" % msg
-            requests.post(reportUrl, data={"Status": "Error: %s" % msg}, verify=False)
-            return
-
-        requests.post(reportUrl, data={"Status": "Done"}, verify=False)
-
-    def consoleCmd(self, cmd):
-        """synchronous console command"""
-        print "Executing command: %s" % cmd
-        radmin = RemoteAdmin("127.0.0.1", self.port, self.username, self.password)
-        if not radmin.connected:
-            return False
-        success, msg = radmin.command(self.name, cmd)
-        radmin.close()
-        if not success:
             return False
         return True

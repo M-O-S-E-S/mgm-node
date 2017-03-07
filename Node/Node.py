@@ -242,21 +242,23 @@ class Node:
         return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
 
     @cherrypy.expose
-    def loadOar(self, id, job):
+    def loadOar(self, regionID, jobID, oarFile):
+        print 'received load Oar call'
         #veryify request is coming from the web frontend
         ip = cherrypy.request.headers["Remote-Addr"]
         if not ip == self.frontendAddress:
             print "INFO: Attempted region control from ip %s instead of web frontent" % ip
             return "Denied, this functionality is restricted to the mgm web app"
 
-        if not id in self.registeredRegions:
+        if not regionID in self.registeredRegions:
             return json.dumps({ "Success": False, "Message": "Region not present"})
-        if not self.registeredRegions[id].isRunning:
+        if not self.registeredRegions[regionID].isRunning:
             return json.dumps({ "Success": False, "Message": "Region must be running to manage oars"})
 
-        ready = "http://%s/ready/%s" % (self.frontendURI, job)
-        report = "http://%s/report/%s" % (self.frontendURI, job)
-        if self.registeredRegions[id].loadOar(ready, report):
+        ready = "http://%s/ready/%s" % (self.frontendURI, jobID)
+        report = "http://%s/report/%s" % (self.frontendURI, jobID)
+        print 'oar file received'
+	if self.registeredRegions[regionID].loadOar(ready, report, oarFile):
             return json.dumps({ "Success": True})
         return json.dumps({ "Success": False, "Message": "An error occurred communicating with the region"})
 

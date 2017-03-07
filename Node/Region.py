@@ -149,10 +149,10 @@ class Region:
         if not os.path.isdir(self.startDir):
             shutil.copytree(binDir, self.startDir)
         else:
-			#update binaries if they have changed
-			if os.path.getmtime(binDir) > os.path.getmtime(self.startDir):
-				shutil.rmtree(self.startDir)
-				shutil.copytree(binDir, self.startDir)
+            #update binaries if they have changed
+            if os.path.getmtime(binDir) > os.path.getmtime(self.startDir):
+                shutil.rmtree(self.startDir)
+                shutil.copytree(binDir, self.startDir)
 
     def start(self):
         """schedule the process to start"""
@@ -212,20 +212,6 @@ class Region:
         f.write(str(self.proc.pid))
         f.close()
 
-    def stop(self, token):
-        """schedule the process to exit"""
-        self.jobQueue.put(("_stop", (token,)))
-
-    def _stop(self, token):
-        #if os.path.exists(self.pidFile):
-        #    os.remove(self.pidFile)
-        radmin = RemoteAdmin("127.0.0.1", self.port, token)
-        if not radmin.connected:
-            print "Cannot shutdown region %s: %s" % (self.uuid, radmin.message)
-            return
-        radmin.shutdown(self.id, 0)
-        radmin.close()
-
     def kill(self):
         """immediately terminate the process"""
         if os.path.exists(self.pidFile):
@@ -251,26 +237,7 @@ class Region:
             return
         oarFile = os.path.join(self.startDir, '%s.oar' % self.name)
         statusFile = os.path.join(self.startDir, '%s.oarstatus' % self.name)
-        if os.path.exists(oarFile):
-            print "Removing existing oarfile %s" % oarFile
-            os.remove(oarFile)
-        if os.path.exists(statusFile):
-            print "Removing existing statusFile %s" % statusFile
-            os.remove(statusFile)
-        radmin = RemoteAdmin("127.0.0.1", self.port, self.username, self.password)
-        if not radmin.connected:
-            print "Save oar aborted, could not connect to remote admin"
-            requests.post(reportUrl, data={"Status": "Error: Could not connect to remoteAdmin"}, verify=False)
-            return
-        print "backing up to %s" % oarFile
-        success, msg = radmin.backup(self.name, oarFile, True)
-        radmin.close()
-        if not success:
-            print "Save oar aborted, error: %s" % msg
-            requests.post(reportUrl, data={"Status": "Error: %s" % msg}, verify=False)
-            return
 
-        print "Save oar triggered in region %s" % self.id
         requests.post(reportUrl, data={"Status": "Saving..."}, verify=False)
 
         #wait for statusfile to be written on completion
@@ -287,6 +254,7 @@ class Region:
             raise NameError
 
         #wait for process to close the archive
+        # no timeout, this can take a long time
         while self.isRunning and is_open(oarFile):
             time.sleep(5)
 

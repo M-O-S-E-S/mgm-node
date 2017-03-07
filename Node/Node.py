@@ -210,19 +210,6 @@ class Node:
         self.registeredRegions[id].start()
         return json.dumps({ "Success": True})
 
-    # MGMNode accesses RemoteAdmin its-self
-    #@cherrypy.expose
-    #def stop(self, id, token):
-    #    #veryify request is coming from the web frontend
-    #    ip = cherrypy.request.headers["Remote-Addr"]
-    #    if not ip == self.frontendAddress:
-    #        print "INFO: Attempted region control from ip %s instead of web frontent" % ip
-    #        return json.dumps({ "Success": False, "Message": "Denied, this functionality is restricted to the mgm web app"})
-    #    if not id in self.registeredRegions:
-    #        return json.dumps({ "Success": False, "Message": "Region not present"})
-    #    self.registeredRegions[id].stop(token)
-    #    return json.dumps({ "Success": True})
-
     @cherrypy.expose
     def kill(self, id):
         #veryify request is coming from the web frontend

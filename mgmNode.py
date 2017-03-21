@@ -55,56 +55,13 @@ def loadConfig(filePath):
     #conf['keyFile'] = config.get('ssl', 'key')
     conf['interval'] = int(config.get('node', 'sample_interval'))
 
-    portRange = config.get('node','region_port_range')
-    consoleRange = config.get('node','console_port_range')
-
-    vals = string.split(portRange,'-')
-    conf['regionPorts'] = range(int(vals[0]),int(vals[1])+1)
-
-    vals = string.split(consoleRange,'-')
-    conf['consolePorts'] = range(int(vals[0]),int(vals[1])+1)
+    conf['regionPorts'] = config.get('node', 'region_port_range')
 
     return conf
-
-'''
-if sys.platform == "win32":
-    import win32serviceutil, win32service
-    class NodeService(win32serviceutil.ServiceFramework):
-        _svc_name_ = "MGMNode"
-        _svc_display_name_ = "MGM Host Node"
-
-        def SvcStop(self):
-            self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
-            cherrypy.engine.exit()
-            self.ReportServiceStatus(win32service.SERVICE_STOPPED)
-
-        def SvcDoRun(self):
-            self.ReportServiceStatus(win32service.SERVICE_RUNNING)
-            localPath = modulePath()
-            conf = loadConfig(os.path.join(localPath,'mgm.cfg'))
-            app = Slave(conf)
-            cherrypy.tree.mount(app, '/', config={'/': {}})
-            cherrypy.config.update({
-                'global':{
-                    'server.socket_host':'0.0.0.0',
-                    'server.socket_port':conf['port'],
-                    'log.screen': True,
-                    'log.error_file': os.path.join(modulePath(),"error.log"),
-                    'log.access_file': os.path.join(modulePath(),"access.log"),
-                    'engine.autoreload.on': False,
-                    'engine.SIGHUP': None,
-                    'engine.SIGTERM': None
-                }
-            })
-            cherrypy.engine.start()
-            cherrypy.engine.block()
-'''
 
 def start():
     conf = loadConfig(os.path.join(modulePath() ,'mgm.cfg'))
     app = Node(conf)
-    #if not os.path.isfile(conf['certFile']) or not os.path.isfile(conf['keyFile']):
-    #    generateCerts(conf['certFile'], conf['keyFile'])
     cherrypy.config.update({
         'global':{
             'server.socket_host':'0.0.0.0',
@@ -114,19 +71,10 @@ def start():
             'engine.SIGHUP': None,
             'engine.SIGTERM': None,
             'server.max_request_body_size': 0,  # disable file size limits, dangerous
-	    'server.socket_timeout': 60,
-            #'server.ssl_module': 'pyopenssl',
-            #'server.ssl_certificate':conf['certFile'],
-            #'server.ssl_private_key':conf['keyFile']
+	    'server.socket_timeout': 60
         }
     })
     cherrypy.quickstart(app, config={'/': {}})
 
 if __name__ == '__main__':
-    #if len(sys.argv) > 1 and sys.argv[1] == "test":
     start()
-    #else:
-    #    if sys.platform == "win32":
-    #        win32serviceutil.HandleCommandLine(NodeService)
-    #    else:
-    #        start()

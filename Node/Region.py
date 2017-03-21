@@ -19,8 +19,7 @@ class Region:
     isRunning = False
     shuttingDown = False
 
-    def __init__(self, regionPort, uuid, name, binDir, regionDir, dispatchUrl, externalAddress):
-        self.port = regionPort
+    def __init__(self, uuid, name, binDir, regionDir, dispatchUrl, externalAddress):
         self.id = uuid
         self.name = name
         self.externalAddress = externalAddress

@@ -17,20 +17,16 @@ class Node:
     ''' A management class interfacing with region worker objects '''
 
     def __init__(self, conf):
-        self.availablePorts = []
         self.registeredRegions = {}
-
+        self.regionPorts = conf['regionPorts']
         statsInterval = conf['interval']
         self.nodePort = conf['port']
-        self.key = uuid.uuid4()
         self.host = conf['host']
         self.frontendURI = conf['webAddress'] + ":" + conf['webPort']
         self.frontendAddress = conf['webAddress']
         self.binDir = conf['binDir']
         self.regionDir = conf['regionDir']
         self.publicAddress = conf['regionAddress']
-        for r,c in zip(conf['regionPorts'],conf['consolePorts']):
-            self.availablePorts.append(r)
 
         #we can't start up without our master config
         success = False
@@ -60,7 +56,7 @@ class Node:
         print "loading config from MGM"
         #load additional config from master service
         url = "http://%s/node" % (self.frontendURI)
-        r = requests.post(url, data={'host':self.host, 'port':self.nodePort, 'key':self.key, 'slots': len(self.availablePorts)}, verify=False)
+        r = requests.post(url, data={'host':self.host, 'port':self.nodePort, 'slots': self.regionPorts}, verify=False)
         if not r.status_code == requests.codes.ok:
             raise Exception("Error contacting MGM at %s" % url)
 
@@ -69,49 +65,14 @@ class Node:
         if not result["Success"]:
             raise Exception("Error loading config: %s" % result["Message"])
 
-        if len(result['Regions']) > len(self.availablePorts):
-            raise Exception("Error: too many regions for configured ports")
         return True, result['Regions']
 
     def initializeRegions(self, regions):
         '''create a Regions process for each assigned region'''
         #convert regions to a map
         regs = {}
-        for r in regions:
-            regs[r['uuid']] = r
-        # Reuse assignments already placed on disk
-        assignments = {}
-        for id in os.listdir(self.regionDir):
-            if id not in regs:
-                # we have a region on disk that is not supposed to be ours, kill it and ignore its mapping
-                r = Region(0, id, '', self.binDir, self.regionDir, self.frontendURI, self.publicAddress)
-                if r.isRunning:
-                    r.kill()
-                continue
-            halcyonFile = os.path.join(self.regionDir, id, 'Halcyon.ini')
-            if os.path.isfile(halcyonFile):
-                for line in open(halcyonFile, 'r'):
-                    if "http_listener_port" in line:
-                        assignments[id] = int(line.split('"')[1])
-
-        for id,port in assignments.iteritems():
-            self.availablePorts.remove(port)
-            region = regs[id]
-            del regs[id]
-            self.registeredRegions[id] = Region(
-                port,
-                region['uuid'],
-                region['name'],
-                self.binDir,
-                self.regionDir,
-                self.frontendURI,
-                self.publicAddress)
-        # assign remaining regions
-        for id in regs:
-            region = regs[id]
-            port = self.availablePorts.pop(0)
+        for region in regions:
             self.registeredRegions[region['uuid']] = Region(
-                port,
                 region['uuid'],
                 region['name'],
                 self.binDir,

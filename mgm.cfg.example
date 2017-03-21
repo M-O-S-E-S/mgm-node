@@ -11,15 +11,8 @@ mgm_port: 3001
 
 ; range of ports for region tcp/udp
 region_port_range: 9000-9029
-; range of ports available for tcp console (local only, but collisions are bad)
-console_port_range: 10000-10029
 ; client connectable address for hosted regions
 region_external_address: yyy.yyy.yyy.yyy
 
 ; interval in seconds to collect statistics and update MGM on process status
 sample_interval: 10
-
-[ssl]
-; locations for ssl certificates.  Self-signed generated if missing.
-cert: my_cert.crt
-key: my_cert.key

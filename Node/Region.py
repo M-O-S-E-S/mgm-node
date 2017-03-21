@@ -152,52 +152,21 @@ class Region:
                 shutil.rmtree(self.startDir)
                 shutil.copytree(binDir, self.startDir)
 
-    def start(self):
+    def start(self, ini, xml):
         """schedule the process to start"""
-        self.jobQueue.put(("_start", ()))
+        self.jobQueue.put(("_start", (ini, xml)))
 
-    def _start(self):
+    def _start(self, ini, xml):
         """start the process"""
         if self.isRunning:
             return
 
         # write the Halcyon.ini config file
-        r = requests.get("http://%s/process/%s?httpPort=%s&externalAddress=%s" % (self.dispatchUrl, self.id, self.port, self.externalAddress))
-        if r.status_code != requests.codes.ok:
-            print "Region %s failed to start, failed getting ini values from MGM"
-            return
-        content = json.loads(r.content)
-        region = content["Region"]
         f = open(os.path.join(self.startDir, 'Halcyon.ini'), 'w')
-        for section in region:
-            f.write('[%s]\n' % section)
-            for item in region[section]:
-                f.write('\t%s = "%s"\n' %(item, region[section][item]))
+	f.write(ini)
         f.close()
 
         # write the Regions.cfg file
-        r = requests.get("http://%s/region/%s" % (self.dispatchUrl, self.id))
-        if r.status_code != requests.codes.ok:
-            print "Region %s failed to start, failed getting region values from MGM"
-            return
-        region = json.loads(r.content)["Region"]
-        xml = """<Root><Config allow_alternate_ports="false" clamp_prim_size="false"
-            external_host_name="{5}" internal_ip_address="0.0.0.0" internal_ip_port="{4}"
-            lastmap_refresh="0" lastmap_uuid="00000000-0000-0000-0000-000000000000"
-            master_avatar_first="first" master_avatar_last="last"
-            master_avatar_pass="23459873204987wkjhbao873q4tr7u3q4of7"
-            master_avatar_uuid="00000000-0000-0000-0000-000000000000"
-            nonphysical_prim_max="0" object_capacity="0" outside_ip="{5}"
-            physical_prim_max="0" region_access="0" region_product="0"
-            sim_UUID="{0}" sim_location_x="{2}" sim_location_y="{3}"
-            sim_name="{1}" /></Root>""".format(
-                self.id,
-                region["Name"],
-                region["LocationX"],
-                region["LocationY"],
-                self.port,
-                self.externalAddress
-                )
         if not os.path.exists(os.path.join(self.startDir, 'Regions')):
             os.mkdir(os.path.join(self.startDir, 'Regions'))
         f = open(os.path.join(self.startDir, 'Regions', 'default.xml'), 'w')

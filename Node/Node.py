@@ -199,7 +199,7 @@ class Node:
         return json.dumps({ "Success": True})
 
     @cherrypy.expose
-    def start(self, id):
+    def start(self, id, ini, xml):
         #veryify request is coming from the web frontend
         ip = cherrypy.request.headers["Remote-Addr"]
         if not ip == self.frontendAddress:
@@ -207,7 +207,7 @@ class Node:
             return json.dumps({ "Success": False, "Message": "Denied, this functionality is restricted to the mgm web app"})
         if not id in self.registeredRegions:
             return json.dumps({ "Success": False, "Message": "Region not present"})
-        self.registeredRegions[id].start()
+        self.registeredRegions[id].start(ini, xml)
         return json.dumps({ "Success": True})
 
     @cherrypy.expose

@@ -56,7 +56,7 @@ class Node:
         print "loading config from MGM"
         #load additional config from master service
         url = "http://%s/node" % (self.frontendURI)
-        r = requests.post(url, data={'host':self.host, 'port':self.nodePort, 'slots': self.regionPorts}, verify=False)
+        r = requests.post(url, data={'name':self.host, 'port':self.nodePort, 'slots': self.regionPorts, 'public_ip': self.publicAddress}, verify=False)
         if not r.status_code == requests.codes.ok:
             raise Exception("Error contacting MGM at %s" % url)
 
@@ -89,7 +89,6 @@ class Node:
         for id,region in self.registeredRegions.iteritems():
             p = {}
             p['id'] = id
-            p['running'] = region.isRunning
             p['stats'] = region.stats
             stats['processes'].append(p)
 

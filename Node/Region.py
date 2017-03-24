@@ -81,6 +81,7 @@ class Region:
                     self.isRunning = False
             stats = {}
             stats["timestamp"] = time.time()
+	    stats["isRunning"] = self.isRunning;
             if self.isRunning:
                 try:
                     stats["uptime"] = time.time() - self.proc.create_time()
@@ -88,7 +89,7 @@ class Region:
                     stats["memKB"] = self.proc.memory_full_info().uss / 1024
                     stats["cpuPercent"] = self.proc.cpu_percent(interval=None)
                 except:
-                    stats = {}
+                    pass
             self.stats =  stats
             time.sleep(5)
 

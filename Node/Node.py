@@ -121,13 +121,7 @@ class Node:
         if id in self.registeredRegions:
             print "Add region %s failed: Region already present on node" % id
             return json.dumps({ "Success": False, "Message": "Region already exists on this Node"})
-        try:
-            port = self.availablePorts.pop(0)
-        except Exception, e:
-            print "Add region %s failed: No Available Ports" % id
-            return json.dumps({ "Success": False, "Message": "No slots remaining"})
         self.registeredRegions[id] = Region(
-            port,
             id,
             name,
             self.binDir,
@@ -152,9 +146,7 @@ class Node:
         if self.registeredRegions[id].isRunning:
             print "Remove region %s failed: Region is currently running" % id
             return json.dumps({ "Success": False, "Message": "Region is still running"})
-        port = self.registeredRegions[id].port
         del self.registeredRegions[id]
-        self.availablePorts.insert(0,port)
         print "Remove region %s succeeded" % id
         return json.dumps({ "Success": True})
 
